@@ -1,0 +1,11 @@
+# Les options explicites de la CLI prennent priorité sur ce fichier.
+# Les chemins d'entrée/sortie restent indiqués dans la commande.
+[vectorization]
+threshold = "auto"
+invert = "auto"
+geometry_tolerance = 2.0
+polyline_tolerance = 2.0
+gap_tolerance = 0.0
+min_component_size = 0
+stroke_width = 1.0
+junction_cleanup = true

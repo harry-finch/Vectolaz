@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "raster2vector"
+version = "0.1.0"
+description = "Reconstruction géométrique progressive de dessins au trait raster."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.24", "opencv-python>=4.8", "scikit-image>=0.22", "scipy>=1.11"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+inkscape-test = ["lxml>=5", "cssselect>=1.2", "tinycss2>=1.2"]
+
+[project.scripts]
+raster2vector = "raster2vector.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

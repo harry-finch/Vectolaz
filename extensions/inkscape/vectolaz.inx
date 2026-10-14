@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+  <name>Vectolaz — Vectoriser les axes d'un PNG</name>
+  <id>org.vectolaz.centerline</id>
+  <param name="tab" type="notebook">
+    <page name="vectorization" gui-text="Vectorisation">
+      <label>Sélectionnez un PNG ; l'image sera conservée sous les vecteurs.</label>
+      <label>Survolez un réglage pour son explication, ou consultez l'onglet Aide.</label>
+      <param name="threshold-auto" type="bool" gui-text="Seuil automatique" gui-description="Calcule le seuil qui sépare les traits du fond selon l'image. Quand cette case est cochée, le seuil manuel est ignoré. Désactivez-la pour reproduire un réglage précis, par exemple 160.">true</param>
+      <param name="threshold" type="int" min="0" max="255" gui-text="Seuil manuel (si automatique désactivé)" gui-description="Sépare les traits du fond avant la reconstruction : 0 = noir, 255 = blanc. Pour un dessin sombre sur fond blanc, une valeur plus haute inclut davantage de pixels gris et peut épaissir ou réunir les traits. Une valeur plus basse peut perdre les traits pâles. Ce seuil ne règle pas le lissage des courbes.">128</param>
+      <param name="geometry-tolerance" type="float" min="0" max="10000" precision="2" gui-text="Tolérance géométrique (px source)" gui-description="Écart maximal accepté pour ajuster les axes à des segments, cercles, arcs ou Bézier. Une petite valeur suit plus précisément le raster ; une valeur plus grande peut absorber ses irrégularités et simplifier les formes. Commencez à 1–2 px ; la rosace de référence utilise 5 px. Les pixels sont ceux du PNG original, quelle que soit sa taille dans Inkscape.">2</param>
+      <param name="gap-tolerance" type="float" min="0" max="10000" precision="2" gui-text="Raccordement des coupures (0 : désactivé)" gui-description="Distance maximale, en pixels du PNG, entre deux extrémités séparées à raccorder. Le moteur vérifie aussi leurs orientations et les obstacles. 0 désactive les raccordements. Augmentez seulement si le dessin contient de petites coupures ; une valeur trop grande risque de joindre des traits distincts.">0</param>
+      <param name="min-component-size" type="int" min="0" max="100000000" gui-text="Surface minimale des composantes (pixels)" gui-description="Supprime avant la reconstruction les petits groupes isolés de pixels de trait dont la surface est inférieure à cette valeur. 0 conserve tous les groupes. Par exemple, 10 élimine ceux de moins de 10 pixels. Ce réglage peut aussi supprimer de petits détails voulus ; il ne supprime pas les petites branches rattachées à un grand motif.">0</param>
+      <param name="stroke-width" type="float" min="0.01" max="10000" precision="2" gui-text="Épaisseur vectorielle (px source)" gui-description="Épaisseur d'affichage des vecteurs produits, en pixels du PNG source. Elle ne modifie ni les axes calculés ni la tolérance. Comme l'image, elle suit le redimensionnement dans Inkscape. 1 px convient pour inspecter les courbes ; vous pourrez changer le contour ensuite.">1</param>
+      <param name="global-arcs" type="bool" gui-text="Regrouper les cercles et grands arcs continus" gui-description="Recherche une même forme circulaire à travers plusieurs branches et intersections : cercle complet ou grand arc continu. Activez cette option pour privilégier les longues formes géométriques. Elle respecte la tolérance choisie et ne regroupe pas les courbes Bézier libres entre branches. Même décochée, l'extension peut produire des Bézier, cercles et arcs locaux.">false</param>
+      <label>Rosace : seuil manuel 160, tolérance 5, regroupement activé.</label>
+    </page>
+    <page name="help" gui-text="Aide">
+      <label appearance="header">Séparer le trait du fond</label>
+      <label xml:space="preserve">Seuil automatique : calcule la séparation selon l'image ; le seuil manuel est ignoré.
+Seuil manuel : de 0 (noir) à 255 (blanc). Sur fond blanc, monter le seuil
+inclut plus de gris ; le baisser peut faire disparaître des traits pâles.
+La transparence du PNG est composée sur blanc.</label>
+      <label appearance="header">Reconstruire et raccorder</label>
+      <label xml:space="preserve">Tolérance géométrique : précision de l'ajustement des axes en pixels sources.
+1–2 px : point de départ précis. 3–5 px : peut absorber plus d'irrégularités.
+Elle n'impose pas une courbe à chaque portion ; les angles sont conservés.
+Raccordement : distance maximale entre extrémités compatibles ; 0 le désactive.
+Regroupement : reconstitue cercles et grands arcs à travers les intersections.
+Les Bézier libres restent ajustés branche par branche.</label>
+      <label appearance="header">Nettoyer et afficher</label>
+      <label xml:space="preserve">Surface minimale : retire les groupes isolés plus petits que cette surface.
+0 conserve tout ; une valeur élevée peut supprimer des détails utiles.
+Épaisseur vectorielle : change l'affichage du trait, pas la géométrie calculée.
+Les distances sont en pixels du PNG natif, jamais en pixels écran ou en mm.</label>
+      <label appearance="header">Deux réglages de référence</label>
+      <label xml:space="preserve">Motif complexe : seuil manuel 160, tolérance 1 ou 2, raccordement 0.
+Rosace : seuil manuel 160, tolérance 5, regroupement activé.
+Chaque application ajoute un groupe : masquez l'ancien pour comparer.
+Sélectionnez toujours le PNG original, pas les vecteurs d'un résultat précédent.</label>
+    </page>
+    <page name="installation" gui-text="Installation">
+      <param name="engine-python" type="path" mode="file" gui-text="Python du moteur (chemin absolu du venv)" gui-description="Sélectionnez l'exécutable Python de l'environnement où raster2vector est installé : .venv/bin/python sur macOS/Linux ou .venv/Scripts/python.exe sur Windows. Ce n'est ni le fichier vectolaz.py ni un PNG. Le moteur doit utiliser Python 3.11 ou plus."></param>
+      <label xml:space="preserve">Le moteur raster2vector doit être installé dans cet environnement Python (3.11+).
+macOS/Linux : .venv/bin/python ; Windows : .venv/Scripts/python.exe.
+Ce chemin est mémorisé ; actualisez-le si vous déplacez le projet ou le venv.
+Délai maximal de traitement : 120 secondes.</label>
+    </page>
+  </param>
+  <effect needs-live-preview="false">
+    <object-type>all</object-type>
+    <effects-menu><submenu name="Vectolaz" /></effects-menu>
+  </effect>
+  <script><command location="inx" interpreter="python">vectolaz.py</command></script>
+</inkscape-extension>
