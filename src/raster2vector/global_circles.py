@@ -4,8 +4,10 @@ from dataclasses import dataclass, replace
 import math
 import numpy as np
 
+from numpy.typing import NDArray
+
 from raster2vector.coordinates import Point
-from raster2vector.geometry import Circle, CircleFit, GeometryResult, fit_circle, _makes_full_turn
+from raster2vector.geometry import Circle, CircleFit, GeometryResult, fit_circle, _makes_full_turn, primitive_source_edge_ids
 from raster2vector.graph import GraphEdge, SkeletonGraph
 
 MIN_SEED_SWEEP_RAD = math.pi/6
@@ -24,19 +26,34 @@ class GlobalCircleResult:
     circles: tuple[GlobalCircle, ...]
 
 
-def _radial_bound(points: tuple[Point, ...], fit: CircleFit) -> float:
-    """Borne exacte de l'écart radial sur tous les segments de la chaîne source."""
-    data = np.array([(p.x-fit.center.x, p.y-fit.center.y) for p in points])
+def _radial_bound_array(coords: NDArray[np.float64], fit: CircleFit) -> float:
+    """Borne exacte de l'écart radial sur des coordonnées (N, 2)."""
+    if len(coords) == 0:
+        return 0.0
+    center = np.array((fit.center.x, fit.center.y), dtype=np.float64)
+    data = coords - center
     radii = np.linalg.norm(data, axis=1)
-    bound = float(np.max(np.abs(radii-fit.radius)))
+    bound = float(np.max(np.abs(radii - fit.radius)))
     if len(data) > 1:
         delta = np.diff(data, axis=0)
-        length2 = np.sum(delta**2, axis=1)
-        t = np.clip(np.divide(-np.sum(data[:-1]*delta, axis=1), length2,
-                              out=np.zeros_like(length2), where=length2 > 0), 0, 1)
-        closest = np.linalg.norm(data[:-1]+t[:, None]*delta, axis=1)
-        bound = max(bound, float(np.max(np.abs(closest-fit.radius))))
+        length2 = np.sum(delta ** 2, axis=1)
+        t = np.clip(
+            np.divide(-np.sum(data[:-1] * delta, axis=1), length2,
+                      out=np.zeros_like(length2), where=length2 > 0),
+            0.0,
+            1.0,
+        )
+        closest = np.linalg.norm(data[:-1] + t[:, None] * delta, axis=1)
+        bound = max(bound, float(np.max(np.abs(closest - fit.radius))))
     return bound
+
+
+def _radial_bound(points: tuple[Point, ...] | NDArray[np.float64], fit: CircleFit) -> float:
+    """Borne exacte de l'écart radial sur tous les segments de la chaîne source."""
+    if isinstance(points, np.ndarray):
+        return _radial_bound_array(points, fit)
+    coords = np.array([(p.x, p.y) for p in points], dtype=np.float64).reshape(-1, 2)
+    return _radial_bound_array(coords, fit)
 
 
 def _cycles(graph: SkeletonGraph, selected: set[int]) -> list[tuple[tuple[int, ...], tuple[Point, ...]]]:
@@ -103,20 +120,31 @@ def reconstruct_global_circles(graph: SkeletonGraph, geometry: GeometryResult,
         raise ValueError("La tolérance globale doit être finie et positive ou nulle.")
     if (graph.width, graph.height) != (geometry.width, geometry.height):
         raise ValueError("Le graphe et la géométrie doivent avoir les mêmes dimensions.")
-    ids = {p.source_edge_id for p in geometry.primitives}
+    ids = {edge_id for p in geometry.primitives for edge_id in primitive_source_edge_ids(p)}
     if ids != {e.id for e in graph.edges} or len(ids) != len(geometry.primitives):
         raise ValueError("La géométrie locale doit contenir une primitive par branche.")
     if tolerance_px == 0:
         return GlobalCircleResult(geometry, ())
+
+    edge_coords: dict[int, NDArray[np.float64]] = {
+        edge.id: np.array([(p.x, p.y) for p in edge.points], dtype=np.float64).reshape(-1, 2)
+        for edge in graph.edges
+    }
+    edge_lengths: dict[int, float] = {
+        edge.id: float(np.sum(np.hypot(np.diff(edge_coords[edge.id][:, 0]), np.diff(edge_coords[edge.id][:, 1]))))
+        if len(edge.points) > 1 else 0.0
+        for edge in graph.edges
+    }
+
     seeds: list[tuple[GraphEdge, CircleFit]] = []
     for edge in graph.edges:
         if edge.is_loop or len(edge.points) < 4:
             continue
         fit = fit_circle(edge.points)
-        if fit is None or _radial_bound(edge.points, fit) > tolerance_px:
+        if fit is None or _radial_bound_array(edge_coords[edge.id], fit) > tolerance_px:
             continue
-        angles = np.unwrap(np.arctan2([p.y-fit.center.y for p in edge.points],
-                                     [p.x-fit.center.x for p in edge.points]))
+        coords = edge_coords[edge.id]
+        angles = np.unwrap(np.arctan2(coords[:, 1] - fit.center.y, coords[:, 0] - fit.center.x))
         if abs(float(angles[-1]-angles[0])) >= MIN_SEED_SWEEP_RAD:
             seeds.append((edge, fit))
     proposals: dict[tuple[int, ...], GlobalCircle] = {}
@@ -130,7 +158,7 @@ def reconstruct_global_circles(graph: SkeletonGraph, geometry: GeometryResult,
             if discrepancy > SUPPORT_SEARCH_FACTOR*tolerance_px:
                 continue
             candidate = fit_circle(tuple(p for e in (*group, edge) for p in e.points))
-            if candidate is not None and all(_radial_bound(e.points, candidate) <= tolerance_px for e in (*group, edge)):
+            if candidate is not None and all(_radial_bound_array(edge_coords[e.id], candidate) <= tolerance_px for e in (*group, edge)):
                 group.append(edge)
                 fit = candidate
         if len(group) < 2:
@@ -138,8 +166,8 @@ def reconstruct_global_circles(graph: SkeletonGraph, geometry: GeometryResult,
         selected = {e.id for e in group}
         # Les connecteurs courts constituent des données, pas des trous à inventer.
         for edge in graph.edges:
-            length = sum(math.hypot(b.x-a.x, b.y-a.y) for a, b in zip(edge.points, edge.points[1:]))
-            if not edge.is_loop and length <= SUPPORT_SEARCH_FACTOR*tolerance_px and _radial_bound(edge.points, fit) <= tolerance_px:
+            length = edge_lengths[edge.id]
+            if not edge.is_loop and length <= SUPPORT_SEARCH_FACTOR*tolerance_px and _radial_bound_array(edge_coords[edge.id], fit) <= tolerance_px:
                 selected.add(edge.id)
         for edges, points in _cycles(graph, selected):
             if len(set(edges) & {e.id for e in group}) < 2:
@@ -169,5 +197,5 @@ def reconstruct_global_circles(graph: SkeletonGraph, geometry: GeometryResult,
         if not used & set(circle.source_edge_ids):
             accepted.append(circle)
             used.update(circle.source_edge_ids)
-    primitives = tuple(p for p in geometry.primitives if p.source_edge_id not in used)+tuple(accepted)
+    primitives = tuple(p for p in geometry.primitives if not (set(primitive_source_edge_ids(p)) & used)) + tuple(accepted)
     return GlobalCircleResult(replace(geometry, primitives=primitives), tuple(accepted))

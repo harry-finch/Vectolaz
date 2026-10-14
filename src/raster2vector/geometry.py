@@ -157,6 +157,16 @@ class CircularArc(ArcFit):
     source_points: tuple[Point, ...]
 
 
+Primitive = LineSegment | Polyline | RawPolyline | Circle | CircularArc | BezierPath
+
+
+def primitive_source_edge_ids(primitive: Primitive) -> tuple[int, ...]:
+    """Retourne les identifiants de branches sources de la primitive."""
+    if hasattr(primitive, "source_edge_ids"):
+        return tuple(getattr(primitive, "source_edge_ids"))
+    return (primitive.source_edge_id,)
+
+
 @dataclass(frozen=True)
 class GeometryResult:
     """Géométrie indépendante ; localement une primitive par branche.
@@ -166,7 +176,7 @@ class GeometryResult:
 
     width: int
     height: int
-    primitives: tuple[LineSegment | Polyline | RawPolyline | Circle | CircularArc | BezierPath, ...]
+    primitives: tuple[Primitive, ...]
 
 
 def fit_circle(points: Sequence[Point]) -> CircleFit | None:

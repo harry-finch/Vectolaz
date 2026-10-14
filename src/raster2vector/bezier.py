@@ -100,6 +100,26 @@ def _candidate(coordinates: NDArray[np.float64], start: int, end: int) -> tuple[
     return curve, split
 
 
+def _path_rms(curves: Sequence[CubicBezier], coordinates: NDArray[np.float64]) -> float:
+    """Calcule l'erreur quadratique moyenne exacte sur l'ensemble des points sources.
+
+    Pour chaque courbe d'indice i > 0, son premier point est exclu du cumul
+    des erreurs au carré car son erreur est déjà comptée à la fin de la courbe i - 1.
+    Le total est ensuite divisé par len(coordinates).
+    """
+    if not curves or len(coordinates) == 0:
+        return 0.0
+    total_squared_error = 0.0
+    for i, curve in enumerate(curves):
+        evals = evaluate_cubic(curve, curve.source_parameters)
+        target = coordinates[curve.source_start_index:curve.source_end_index + 1]
+        errors_sq = np.sum((evals - target) ** 2, axis=1)
+        if i > 0:
+            errors_sq = errors_sq[1:]
+        total_squared_error += float(np.sum(errors_sq))
+    return float(math.sqrt(total_squared_error / len(coordinates)))
+
+
 def fit_bezier(points: Sequence[Point], tolerance_px: float = 2.0, *, source_edge_id: int = 0) -> BezierPath | None:
     """Ajuste des cubiques par moindres carrés, puis découpe si la borne dépasse la tolérance.
 
@@ -139,10 +159,9 @@ def fit_bezier(points: Sequence[Point], tolerance_px: float = 2.0, *, source_edg
             index = max(0, index-1)
         else:
             index += 1
-    squared_error = sum(c.fit_error_rms**2 * len(c.source_parameters) for c in curves)
-    count = len(source)  # Les extrémités partagées ont une erreur nulle.
+    rms = _path_rms(curves, coordinates)
     return BezierPath(tuple(curves), source_edge_id, source, max(c.fit_error_max for c in curves),
-                      math.sqrt(squared_error/count), max(c.error_bound for c in curves))
+                      rms, max(c.error_bound for c in curves))
 
 
 def fit_piecewise_bezier(points: Sequence[Point], tolerance_px: float,
@@ -163,10 +182,25 @@ def fit_piecewise_bezier(points: Sequence[Point], tolerance_px: float,
         raise ValueError("Les indices de découpage Bézier doivent appartenir à la source.")
     cuts = sorted({0, len(source)-1, *break_indices})
     if source[0] == source[-1]:
-        # Même sans angle, quatre portions donnent une fermeture exploitable.
-        cuts = sorted(set(cuts) | {i*(len(source)-1)//4 for i in range(1, 4)})
+        # Même sans angle, quatre portions donnent une fermeture exploitable si la chaîne est assez longue.
+        if len(source) >= 5:
+            cuts = sorted(set(cuts) | {i*(len(source)-1)//4 for i in range(1, 4)})
+    filtered_cuts: list[int] = [cuts[0]]
+    for c in cuts[1:]:
+        if c - filtered_cuts[-1] >= 1 and source[filtered_cuts[-1]] != source[c]:
+            filtered_cuts.append(c)
+        elif c == cuts[-1]:
+            while len(filtered_cuts) > 1 and source[filtered_cuts[-1]] == source[c]:
+                filtered_cuts.pop()
+            if source[filtered_cuts[-1]] != source[c]:
+                filtered_cuts.append(c)
+    valid_intervals = list(zip(filtered_cuts, filtered_cuts[1:]))
+    if source[0] == source[-1] and len(valid_intervals) < 2:
+        return None
+    if not valid_intervals or filtered_cuts[-1] != len(source) - 1:
+        return None
     curves = []
-    for start, end in zip(cuts, cuts[1:]):
+    for start, end in valid_intervals:
         result = fit_bezier(source[start:end+1], tolerance_px, source_edge_id=source_edge_id)
         if result is None:
             return None
@@ -174,7 +208,8 @@ def fit_piecewise_bezier(points: Sequence[Point], tolerance_px: float,
                               source_end_index=curve.source_end_index+start) for curve in result.segments)
     if not curves:
         return None
-    squared_error = sum(c.fit_error_rms**2*len(c.source_parameters) for c in curves)
+    coordinates = np.array([(p.x, p.y) for p in source], dtype=np.float64).reshape(-1, 2)
+    rms = _path_rms(curves, coordinates)
     return BezierPath(tuple(curves), source_edge_id, source,
-                      max(c.fit_error_max for c in curves), math.sqrt(squared_error/len(source)),
+                      max(c.fit_error_max for c in curves), rms,
                       max(c.error_bound for c in curves), is_loop)

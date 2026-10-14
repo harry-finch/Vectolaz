@@ -164,3 +164,34 @@ def test_cli_directory_output_error(tmp_path: Path, capsys: pytest.CaptureFixtur
     source.write_bytes(png_bytes())
     assert main([str(source), "--output", str(tmp_path)]) == 1
     assert "Erreur :" in capsys.readouterr().err
+
+
+def test_unsupported_primitive_raises_type_error() -> None:
+    """Vérifie le rejet explicite par TypeError d'un type de primitive inconnu dans svg_document."""
+    class UnknownPrimitive:
+        source_edge_id = 123
+
+    geometry = GeometryResult(40, 30, (UnknownPrimitive(),))  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="Primitive géométrique non supportée"):
+        svg_document(geometry)
+
+
+def test_save_graph_debug_tiny_image(tmp_path: Path) -> None:
+    """Vérifie que save_graph_debug s'exécute sans erreur et produit un PNG valide sur une image 3x3."""
+    from raster2vector.debug import save_graph_debug
+    from raster2vector.graph import GraphNode, GraphEdge, SkeletonGraph
+
+    skeleton = np.zeros((3, 3), dtype=bool)
+    skeleton[1, 1] = True
+    nodes = [GraphNode(0, "endpoint", Point(1.0, 1.0), ((1, 1),))]
+    edges = [GraphEdge(0, 0, 0, (Point(1.0, 1.0),))]
+    graph = SkeletonGraph(3, 3, tuple(nodes), tuple(edges))
+
+    debug_dir = tmp_path / "debug_tiny"
+    save_graph_debug(debug_dir, skeleton, graph)
+    output_png = debug_dir / "graph.png"
+    assert output_png.is_file()
+    image = cv2.imread(str(output_png))
+    assert image is not None
+    assert image.shape == (3, 3, 3)
+

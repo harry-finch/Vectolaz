@@ -10,7 +10,7 @@ from raster2vector.coordinates import Point
 from raster2vector.bezier import BezierPath
 from raster2vector.global_circles import GlobalCircle
 from raster2vector.global_arcs import GlobalArc
-from raster2vector.geometry import GeometryResult, LineSegment, RawPolyline, Circle, CircularArc
+from raster2vector.geometry import GeometryResult, LineSegment, Polyline, RawPolyline, Circle, CircularArc
 
 SVG_NS = "http://www.w3.org/2000/svg"
 XLINK_NS = "http://www.w3.org/1999/xlink"
@@ -120,10 +120,12 @@ def svg_document(
         if isinstance(primitive, LineSegment):
             points = (primitive.start, primitive.end)
             closed = False
-        else:
+        elif isinstance(primitive, (Polyline, RawPolyline)):
             points = primitive.points
             closed = (isinstance(primitive, RawPolyline) and primitive.is_loop
                       and len(points) > 2 and points[0] == points[-1])
+        else:
+            raise TypeError(f"Primitive géométrique non supportée : {type(primitive)!r}")
         if len(points) < 2:
             continue
         path_points = points[:-1] if closed else points

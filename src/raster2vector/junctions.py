@@ -6,11 +6,11 @@ import math
 import numpy as np
 from scipy.optimize import least_squares
 
-from raster2vector.bezier import BezierPath, CubicBezier, evaluate_cubic
+from raster2vector.bezier import BezierPath, CubicBezier, evaluate_cubic, _path_rms
 from raster2vector.coordinates import Point
 from raster2vector.geometry import (
     CircularArc, Circle, GeometryResult, LineFit, LineSegment, Polyline, RawPolyline,
-    fit_line, _segment_distances,
+    Primitive, fit_line, _segment_distances,
 )
 from raster2vector.graph import SkeletonGraph
 
@@ -18,7 +18,6 @@ COLLINEAR_ANGLE_RAD = math.radians(5)
 MIN_SUPPORT_SPAN_PX = 6.0
 SUPPORT_CONDITION_RATIO = 0.05
 LOCAL_WINDOW_PX = 12.0
-Primitive = LineSegment | Polyline | RawPolyline | CircularArc | Circle | BezierPath
 
 
 @dataclass(frozen=True)
@@ -192,6 +191,8 @@ def _adjust(primitive: Primitive, start: Point, end: Point, tolerance: float) ->
         return replace(primitive, points=points, fit_error_max=float(errors.max()),
                        fit_error_rms=float(np.sqrt(np.mean(errors**2))))
     if isinstance(primitive, RawPolyline):
+        if primitive.is_loop and start != end:
+            return None
         # Correspondance linéaire entre les deux chaînes : seules les deux
         # extrémités changent, donc cette borne vaut aussi entre les points.
         source = primitive.source_points or primitive.points
@@ -204,25 +205,36 @@ def _adjust(primitive: Primitive, start: Point, end: Point, tolerance: float) ->
                        fit_error_rms=float(np.sqrt(np.sum(errors**2)/len(primitive.points))),
                        source_points=primitive.source_points or primitive.points)
     if isinstance(primitive, BezierPath):
+        if primitive.is_loop and start != end:
+            return None
         segments = list(primitive.segments)
         first, last = segments[0], segments[-1]
-        delta = _array(start)-_array(first.start)
-        segments[0] = replace(first, start=start, control1=_point(_array(first.control1)+delta))
-        last = segments[-1]
-        delta = _array(end)-_array(last.end)
-        segments[-1] = replace(last, end=end, control2=_point(_array(last.control2)+delta))
+        delta_start = _array(start) - _array(first.start)
+        delta_end = _array(end) - _array(last.end)
+        if len(segments) == 1:
+            segments[0] = replace(
+                first,
+                start=start,
+                control1=_point(_array(first.control1) + delta_start),
+                end=end,
+                control2=_point(_array(first.control2) + delta_end),
+            )
+        else:
+            segments[0] = replace(first, start=start, control1=_point(_array(first.control1) + delta_start))
+            segments[-1] = replace(last, end=end, control2=_point(_array(last.control2) + delta_end))
         segments = [_measure_cubic(c, primitive.source_points) for c in segments]
         bound = max(c.error_bound for c in segments)
         if bound > max(tolerance, primitive.error_bound):
             return None
         # Compter les points partagés une seule fois, même si l'arrondi n'est pas nul.
+        coordinates = np.array([(p.x, p.y) for p in primitive.source_points], dtype=np.float64).reshape(-1, 2)
         errors = []
         for c in segments:
             data = np.array([(p.x, p.y) for p in primitive.source_points[c.source_start_index:c.source_end_index+1]])
             errors.extend(np.linalg.norm(evaluate_cubic(c, c.source_parameters)-data, axis=1)[:-1])
         errors.append(float(np.linalg.norm(_array(end)-_array(primitive.source_points[-1]))))
         return replace(primitive, segments=tuple(segments), error_bound=bound,
-                       fit_error_max=max(errors), fit_error_rms=float(np.sqrt(np.mean(np.array(errors)**2))))
+                       fit_error_max=max(errors), fit_error_rms=_path_rms(tuple(segments), coordinates))
     return None
 
 

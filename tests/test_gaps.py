@@ -1,6 +1,7 @@
 """Raccords plausibles, refus conservateurs, provenance et intégration CLI."""
 
 from pathlib import Path
+import time
 import cv2
 import numpy as np
 import pytest
@@ -9,6 +10,7 @@ from raster2vector import (
     Point, GraphNode, GraphEdge, SkeletonGraph, LineSegment,
     connect_gaps, reconstruct_geometry, skeleton_to_graph,
 )
+from raster2vector.gaps import _segment_distance, _segments_to_segment_min_distance, GapConnection
 from raster2vector.cli import main
 from raster2vector.image_io import save_png
 
@@ -146,3 +148,114 @@ def test_extra_debug_must_not_overwrite_input(tmp_path: Path, name: str) -> None
     before = source.read_bytes()
     assert main([str(source), "--gap-tolerance", "5", "--debug-dir", str(tmp_path)]) == 1
     assert source.read_bytes() == before
+
+
+def test_segment_distance_cross_touching_colinear() -> None:
+    # 1. Croisement strict
+    assert _segment_distance(Point(0, 5), Point(10, 5), Point(5, 0), Point(5, 10)) == 0.0
+
+    # 2. Contact par sommet (T-junction ou contact d'extrémité)
+    assert _segment_distance(Point(0, 0), Point(5, 0), Point(5, 0), Point(5, 5)) == 0.0
+    assert _segment_distance(Point(0, 0), Point(10, 0), Point(5, 0), Point(5, 5)) == 0.0
+
+    # 3. Colinéaires se chevauchant partiellement
+    assert _segment_distance(Point(0, 0), Point(10, 0), Point(5, 0), Point(15, 0)) == 0.0
+
+    # 4. Colinéaires avec inclusion totale
+    assert _segment_distance(Point(0, 0), Point(10, 0), Point(2, 0), Point(8, 0)) == 0.0
+    assert _segment_distance(Point(2, 0), Point(8, 0), Point(0, 0), Point(10, 0)) == 0.0
+
+    # 5. Colinéaires disjoints
+    assert _segment_distance(Point(0, 0), Point(4, 0), Point(6, 0), Point(10, 0)) == pytest.approx(2.0)
+
+    # 6. Parallèles disjoints
+    assert _segment_distance(Point(0, 0), Point(10, 0), Point(0, 3), Point(10, 3)) == pytest.approx(3.0)
+
+    # Vérification vectorisée _segments_to_segment_min_distance
+    p = np.array([0.0, 0.0])
+    q = np.array([10.0, 0.0])
+    c = np.array([[5.0, 0.0], [0.0, 3.0]])
+    d = np.array([[15.0, 0.0], [10.0, 3.0]])
+    # Le premier segment est colinéaire chevauchant (distance 0), le min doit valoir 0.0
+    assert _segments_to_segment_min_distance(p, q, c, d) == 0.0
+
+
+def test_empty_graph_and_isolated_nodes_edge_cases() -> None:
+    # 1. Graphe sans aucun segment (M == 0)
+    empty_graph = SkeletonGraph(100, 100, (), ())
+    res_empty = connect_gaps(empty_graph, 10.0)
+    assert res_empty.graph is empty_graph
+    assert len(res_empty.connections) == 0
+
+    # 2. Graphe composé uniquement de nœuds isolated
+    isolated_node = GraphNode(0, "isolated", Point(20.0, 20.0), ((20, 20),))
+    iso_graph = SkeletonGraph(100, 100, (isolated_node,), ())
+    res_iso = connect_gaps(iso_graph, 10.0)
+    assert res_iso.graph is iso_graph
+    assert len(res_iso.connections) == 0
+
+
+def test_colinear_overlapping_candidate_bridges_rejection() -> None:
+    # 1. Deux segments candidats colinéaires qui se chevauchent partiellement :
+    # la distance doit être exactement 0.0 et ils doivent être rejetés lors du filtrage de croisement mutuel
+    c1 = GapConnection(0, 1, Point(10.0, 50.0), Point(30.0, 50.0), 20.0)
+    c2 = GapConnection(2, 3, Point(20.0, 50.0), Point(40.0, 50.0), 20.0)
+    assert _segment_distance(c1.start, c1.end, c2.start, c2.end) == 0.0
+
+    unique_candidates = [c1, c2]
+    accepted = tuple(
+        c for c in unique_candidates
+        if all(c == other or _segment_distance(c.start, c.end, other.start, other.end) > 0.75
+               for other in unique_candidates)
+    )
+    assert len(accepted) == 0
+
+    # 2. Rejet de ponts concurrents qui se croisent dans connect_gaps
+    graph = graph_for(
+        line((5, 50), (45, 50)), line((55, 50), (100, 50)),
+        line((50, 5), (50, 45)), line((50, 55), (50, 90)),
+    )
+    result = connect_gaps(graph, 10.0)
+    assert len(result.connections) == 0
+
+
+def test_performance_large_synthetic_graph() -> None:
+    # 50 arêtes réparties sur une grille, chacune avec 41 points (40 segments) -> 2 000 segments.
+    # 50 arêtes * 2 extrémités = 100 endpoints.
+    # 25 paires d'arêtes en vis-à-vis avec un gap de 5 px (doivent être raccordées).
+    nodes = []
+    edges = []
+    node_id = 0
+    edge_id = 0
+
+    for r in range(25):
+        y = float(20 + 15 * r)
+        pts_a = tuple(Point(float(x), y) for x in np.linspace(10, 50, 41))
+        nodes.append(GraphNode(node_id, "endpoint", pts_a[0], ((round(y), round(pts_a[0].x)),)))
+        nodes.append(GraphNode(node_id + 1, "endpoint", pts_a[-1], ((round(y), round(pts_a[-1].x)),)))
+        edges.append(GraphEdge(edge_id, node_id, node_id + 1, pts_a))
+        node_id += 2
+        edge_id += 1
+
+        pts_b = tuple(Point(float(x), y) for x in np.linspace(55, 95, 41))
+        nodes.append(GraphNode(node_id, "endpoint", pts_b[0], ((round(y), round(pts_b[0].x)),)))
+        nodes.append(GraphNode(node_id + 1, "endpoint", pts_b[-1], ((round(y), round(pts_b[-1].x)),)))
+        edges.append(GraphEdge(edge_id, node_id, node_id + 1, pts_b))
+        node_id += 2
+        edge_id += 1
+
+    graph = SkeletonGraph(120, 450, tuple(nodes), tuple(edges))
+    assert sum(len(e.points) - 1 for e in graph.edges) == 2000
+    assert sum(1 for n in graph.nodes if n.kind == "endpoint") == 100
+
+    # Mesure du temps d'exécution
+    t0 = time.perf_counter()
+    res = connect_gaps(graph, 10.0)
+    elapsed = time.perf_counter() - t0
+
+    # Critère : exécution en moins de 100 ms
+    assert elapsed < 0.100, f"connect_gaps trop lent: {elapsed*1000:.2f} ms >= 100 ms"
+    assert len(res.connections) == 25
+    # Déterminisme bit-à-bit
+    assert connect_gaps(graph, 10.0) == res
+

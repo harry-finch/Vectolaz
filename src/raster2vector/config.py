@@ -18,6 +18,8 @@ class VectorizationConfig:
     gap_tolerance: float = 0.0
     stroke_width: float = 1.0
     junction_cleanup: bool = True
+    global_circles: bool = False
+    global_arcs: bool = False
 
     def __post_init__(self) -> None:
         if self.threshold != "auto" and (type(self.threshold) is not int or not 0 <= self.threshold <= 255):
@@ -35,8 +37,11 @@ class VectorizationConfig:
             if not finite or value < 0 or (name == "stroke_width" and value == 0):
                 qualifier = "strictement positif" if name == "stroke_width" else "positif ou nul"
                 raise ValueError(f"--{name.replace('_', '-')} doit être fini et {qualifier}.")
-        if type(self.junction_cleanup) is not bool:
-            raise ValueError("junction_cleanup doit être un booléen true ou false.")
+        for name in ("junction_cleanup", "global_circles", "global_arcs"):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f"{name} doit être un booléen true ou false.")
+        if self.global_arcs:
+            object.__setattr__(self, "global_circles", True)
 
     def with_overrides(self, **overrides: object) -> "VectorizationConfig":
         """Valide le résultat ; les valeurs None signifient absence d'option CLI."""

@@ -72,8 +72,11 @@ def save_graph_debug(
                 (radius, radius), (-radius - width, radius),
                 (radius, -radius), (-radius - width, -radius),
             ))
-        origin = (max(0, min(col, graph.width - width - 1)),
-                  max(height, min(row, graph.height - baseline - 1)))
+        max_x = max(0, graph.width - 1)
+        max_y = max(0, graph.height - 1)
+        pref_x = min(col, graph.width - width - 1) if graph.width > width else 0
+        pref_y = max(height, min(row, graph.height - baseline - 1)) if graph.height > height + baseline else max_y
+        origin = (max(0, min(pref_x, max_x)), max(0, min(pref_y, max_y)))
         for dx, dy in offsets:
             x, y = col + dx, row + dy
             box = (x - 2, y - height - 2, x + width + 2, y + baseline + 2)

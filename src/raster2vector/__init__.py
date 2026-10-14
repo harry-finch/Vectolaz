@@ -14,10 +14,12 @@ from raster2vector.geometry import (
     simplify_polyline, reconstruct_geometry,
     CircleFit, Circle, fit_circle,
     ArcFit, CircularArc, fit_arc,
+    Primitive, primitive_source_edge_ids,
 )
 from raster2vector.svg_export import svg_document, export_svg
 from raster2vector.gaps import GapConnection, GapResult, connect_gaps
 from raster2vector.junctions import JoinedArc, JunctionAdjustment, Continuation, JunctionResult, refine_junctions
+from raster2vector.pipeline import PipelineResult, run_pipeline
 
 __all__ = [
     "GlobalArc", "GlobalArcResult", "reconstruct_global_arcs",
@@ -33,4 +35,6 @@ __all__ = [
     "svg_document", "export_svg",
     "CircleFit", "Circle", "fit_circle",
     "ArcFit", "CircularArc", "fit_arc",
+    "Primitive", "primitive_source_edge_ids",
+    "PipelineResult", "run_pipeline",
 ]
