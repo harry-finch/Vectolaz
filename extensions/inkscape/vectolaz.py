@@ -11,9 +11,13 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import xml.etree.ElementTree as ET
 
-import inkex
+try:
+    import inkex
+except ImportError:
+    inkex = None
 
 from image_source import read_png
 from placement import image_mapping
@@ -22,24 +26,150 @@ ENGINE_TIMEOUT_SECONDS = 120
 SVG_NS = "http://www.w3.org/2000/svg"
 
 
+class ReadOnlyDict(dict):
+    """Dictionnaire immuable en lecture seule."""
+
+    def __setitem__(self, key, value):
+        raise TypeError("PRESETS est un dictionnaire immuable.")
+
+    def __delitem__(self, key):
+        raise TypeError("PRESETS est un dictionnaire immuable.")
+
+    def clear(self):
+        raise TypeError("PRESETS est un dictionnaire immuable.")
+
+    def update(self, *args, **kwargs):
+        raise TypeError("PRESETS est un dictionnaire immuable.")
+
+    def pop(self, *args, **kwargs):
+        raise TypeError("PRESETS est un dictionnaire immuable.")
+
+    def popitem(self):
+        raise TypeError("PRESETS est un dictionnaire immuable.")
+
+    def setdefault(self, *args, **kwargs):
+        raise TypeError("PRESETS est un dictionnaire immuable.")
+
+
+PRESETS: dict[str, dict[str, object]] = ReadOnlyDict({
+    "technical": ReadOnlyDict({
+        "auto_threshold": True,
+        "geometry_tolerance": 2.5,
+        "spur_tolerance": 3.0,
+        "gap_tolerance": 0.0,
+        "min_component_size": 5,
+        "global_arcs": False,
+    }),
+    "rosace": ReadOnlyDict({
+        "auto_threshold": False,
+        "threshold": 160,
+        "geometry_tolerance": 5.0,
+        "spur_tolerance": 3.0,
+        "gap_tolerance": 0.0,
+        "min_component_size": 10,
+        "global_arcs": True,
+    }),
+    "organic": ReadOnlyDict({
+        "auto_threshold": True,
+        "geometry_tolerance": 2.0,
+        "spur_tolerance": 2.5,
+        "gap_tolerance": 0.0,
+        "min_component_size": 5,
+        "global_arcs": False,
+    }),
+    "detailed": ReadOnlyDict({
+        "auto_threshold": False,
+        "threshold": 165,
+        "geometry_tolerance": 1.0,
+        "spur_tolerance": 1.0,
+        "gap_tolerance": 0.0,
+        "min_component_size": 2,
+        "global_arcs": False,
+    }),
+    "scanned": ReadOnlyDict({
+        "auto_threshold": False,
+        "threshold": 175,
+        "geometry_tolerance": 3.0,
+        "spur_tolerance": 4.5,
+        "gap_tolerance": 5.0,
+        "min_component_size": 25,
+        "global_arcs": False,
+    }),
+})
+
+
+def resolve_options(options: object) -> SimpleNamespace:
+    """Résout les options effectives selon le profil (preset) choisi."""
+    preset = getattr(options, "preset", "custom")
+    threshold_auto = getattr(options, "threshold_auto", getattr(options, "auto_threshold", True))
+    threshold = getattr(options, "threshold", 128)
+    geometry_tolerance = getattr(options, "geometry_tolerance", 2.0)
+    gap_tolerance = getattr(options, "gap_tolerance", 0.0)
+    spur_tolerance = getattr(options, "spur_tolerance", 0.0)
+    min_component_size = getattr(options, "min_component_size", 0)
+    stroke_width = getattr(options, "stroke_width", 1.0)
+    global_arcs = getattr(options, "global_arcs", False)
+
+    resolved = SimpleNamespace(
+        preset=preset,
+        threshold_auto=threshold_auto,
+        auto_threshold=threshold_auto,
+        threshold=threshold,
+        geometry_tolerance=geometry_tolerance,
+        gap_tolerance=gap_tolerance,
+        spur_tolerance=spur_tolerance,
+        min_component_size=min_component_size,
+        stroke_width=stroke_width,
+        global_arcs=global_arcs,
+    )
+
+    if preset and preset != "custom":
+        if preset not in PRESETS:
+            raise ValueError(f"Profil de préréglage inconnu : {preset}")
+        cfg = PRESETS[preset]
+        if "auto_threshold" in cfg:
+            val = bool(cfg["auto_threshold"])
+            resolved.threshold_auto = val
+            resolved.auto_threshold = val
+        if "threshold" in cfg:
+            resolved.threshold = int(cfg["threshold"])
+        if "geometry_tolerance" in cfg:
+            resolved.geometry_tolerance = float(cfg["geometry_tolerance"])
+        if "spur_tolerance" in cfg:
+            resolved.spur_tolerance = float(cfg["spur_tolerance"])
+        if "gap_tolerance" in cfg:
+            resolved.gap_tolerance = float(cfg["gap_tolerance"])
+        if "min_component_size" in cfg:
+            resolved.min_component_size = int(cfg["min_component_size"])
+        if "global_arcs" in cfg:
+            resolved.global_arcs = bool(cfg["global_arcs"])
+        # stroke_width est conservé tel quel depuis options
+
+    return resolved
+
+
 def run_engine(python: str, source: Path, output: Path, options: object) -> bytes:
     """La CLI est exécutée sans shell, dans son propre environnement Python."""
     executable = Path(python).expanduser()
     if not python or not executable.is_absolute() or not executable.is_file():
         raise ValueError("Indiquez le chemin absolu du Python du moteur dans l'onglet Installation.")
-    for name in ("geometry_tolerance", "gap_tolerance", "stroke_width"):
-        value = getattr(options, name)
+    opts = resolve_options(options)
+    for name in ("geometry_tolerance", "gap_tolerance", "spur_tolerance", "stroke_width"):
+        value = getattr(opts, name)
         if not math.isfinite(value) or value < 0 or (name == "stroke_width" and value == 0):
             raise ValueError("Les tolérances doivent être finies et positives ou nulles, et l'épaisseur positive.")
-    if options.min_component_size < 0 or not 0 <= options.threshold <= 255:
+    if opts.min_component_size < 0 or not 0 <= opts.threshold <= 255:
         raise ValueError("Le seuil doit être entre 0 et 255 et la taille minimale positive ou nulle.")
-    command = [str(executable), "-m", "raster2vector", str(source), "--output", str(output),
-               "--threshold", "auto" if options.threshold_auto else str(options.threshold),
-               "--geometry-tolerance", str(options.geometry_tolerance),
-               "--gap-tolerance", str(options.gap_tolerance),
-               "--min-component-size", str(options.min_component_size),
-               "--stroke-width", str(options.stroke_width)]
-    if options.global_arcs:
+    command = [
+        str(executable), "-m", "raster2vector", str(source), "--output", str(output),
+        "--threshold", "auto" if opts.threshold_auto else str(opts.threshold),
+        "--geometry-tolerance", str(opts.geometry_tolerance),
+        "--gap-tolerance", str(opts.gap_tolerance),
+        "--spur-tolerance", str(opts.spur_tolerance),
+        "--min-component-size", str(opts.min_component_size),
+        "--stroke-width", str(opts.stroke_width),
+    ]
+    if opts.global_arcs:
         command.append("--global-arcs")
     # Le Python embarqué d'Inkscape peut exporter ces variables : ne pas les
     # transmettre au venv, qui doit charger ses propres modules et bibliothèques.
@@ -132,19 +262,40 @@ def image_transform(image: inkex.Image, width: int, height: int) -> inkex.Transf
     return image.transform @ inkex.Transform((sx, 0, 0, sy, dx, dy))
 
 
-class VectolazExtension(inkex.EffectExtension):
+if inkex is not None:
+    _BaseExtension = inkex.EffectExtension
+    _Boolean = inkex.Boolean
+else:
+    class _BaseExtension:  # type: ignore[no-redef]
+        def __init__(self):
+            import argparse
+            self.arg_parser = argparse.ArgumentParser()
+            self.add_arguments(self.arg_parser)
+        def add_arguments(self, pars):
+            pass
+        def parse_arguments(self, args):
+            self.options = self.arg_parser.parse_args(args)
+    def _Boolean(val):  # type: ignore[no-redef]
+        if isinstance(val, bool):
+            return val
+        return str(val).lower() in ("true", "1", "yes")
+
+
+class VectolazExtension(_BaseExtension):
     """Reconstruit les axes d'un PNG sélectionné, en conservant son image."""
 
     def add_arguments(self, pars) -> None:
         pars.add_argument("--tab", default="vectorization")
+        pars.add_argument("--preset", default="custom", choices=["custom", *PRESETS.keys()])
         pars.add_argument("--engine-python", default="")
-        pars.add_argument("--threshold-auto", type=inkex.Boolean, default=True)
+        pars.add_argument("--threshold-auto", type=_Boolean, default=True)
         pars.add_argument("--threshold", type=int, default=128)
         pars.add_argument("--geometry-tolerance", type=float, default=2.0)
         pars.add_argument("--gap-tolerance", type=float, default=0.0)
+        pars.add_argument("--spur-tolerance", "--spur_tolerance", dest="spur_tolerance", type=float, default=0.0)
         pars.add_argument("--min-component-size", type=int, default=0)
         pars.add_argument("--stroke-width", type=float, default=1.0)
-        pars.add_argument("--global-arcs", type=inkex.Boolean, default=False)
+        pars.add_argument("--global-arcs", type=_Boolean, default=False)
 
     def effect(self) -> None:
         selected = list(self.svg.selection.values())
@@ -158,8 +309,19 @@ class VectolazExtension(inkex.EffectExtension):
                 source, output = Path(folder)/"input.png", Path(folder)/"output.svg"
                 source.write_bytes(data)
                 vectors = validated_vectors(run_engine(self.options.engine_python, source, output, self.options), width, height)
+            opts = resolve_options(self.options)
+            preset_labels = {
+                "custom": "Personnalisé",
+                "technical": "Dessin technique",
+                "rosace": "Rosace",
+                "organic": "Tracé libre",
+                "detailed": "Motif fin",
+                "scanned": "Croquis scanné",
+            }
+            p_label = preset_labels.get(opts.preset, opts.preset)
             wrapper = inkex.Group()
-            wrapper.set("inkscape:label", "Vectolaz — axes reconstruits")
+            wrapper.set("inkscape:label", f"Vectolaz — {p_label} (tol={opts.geometry_tolerance}px, barbes={opts.spur_tolerance}px)")
+            wrapper.set("data-preset", opts.preset)
             wrapper.set("data-source-image", image.get("id", ""))
             wrapper.transform = placement
             wrapper.append(vectors)

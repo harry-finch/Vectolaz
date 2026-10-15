@@ -6,36 +6,60 @@
     <page name="vectorization" gui-text="Vectorisation">
       <label>Sélectionnez un PNG ; l'image sera conservée sous les vecteurs.</label>
       <label>Survolez un réglage pour son explication, ou consultez l'onglet Aide.</label>
+      <param name="preset" type="optiongroup" appearance="combo" gui-text="Profil de motif (Préréglage) :" gui-description="Applique directement des réglages optimaux lors du clic sur Appliquer. Choisissez « Personnalisé » pour régler manuellement chaque paramètre ci-dessous.">
+        <option value="custom">Personnalisé (utiliser les réglages manuels ci-dessous)</option>
+        <option value="technical">Dessin technique (Auto, Tolérance 2.5 px, Barbes 3.0 px, Poussières 5 px)</option>
+        <option value="rosace">Rosace (Seuil 160, Tolérance 5.0 px, Barbes 3.0 px, Regroupement)</option>
+        <option value="organic">Tracé libre (Auto, Tolérance 2.0 px, Barbes 2.5 px, Poussières 5 px)</option>
+        <option value="detailed">Motif fin &amp; très détaillé (Seuil 165, Tolérance 1.0 px, Barbes 1.0 px)</option>
+        <option value="scanned">Croquis scanné (Seuil 175, Tolérance 3.0 px, Barbes 4.5 px, Coupures 5.0 px)</option>
+      </param>
+      <label>• Les préréglages appliquent directement leurs valeurs lors du clic sur « Appliquer ».</label>
+      <label>• L'interface d'Inkscape étant statique, les curseurs ci-dessous ne changent pas à l'écran.</label>
+      <label>• Pour régler vous-même les curseurs ci-dessous, laissez le profil sur « Personnalisé ».</label>
+      <separator/>
+      <label appearance="header">1. Extraction du trait (Image)</label>
       <param name="threshold-auto" type="bool" gui-text="Seuil automatique" gui-description="Calcule le seuil qui sépare les traits du fond selon l'image. Quand cette case est cochée, le seuil manuel est ignoré. Désactivez-la pour reproduire un réglage précis, par exemple 160.">true</param>
       <param name="threshold" type="int" min="0" max="255" gui-text="Seuil manuel (si automatique désactivé)" gui-description="Sépare les traits du fond avant la reconstruction : 0 = noir, 255 = blanc. Pour un dessin sombre sur fond blanc, une valeur plus haute inclut davantage de pixels gris et peut épaissir ou réunir les traits. Une valeur plus basse peut perdre les traits pâles. Ce seuil ne règle pas le lissage des courbes.">128</param>
-      <param name="geometry-tolerance" type="float" min="0" max="10000" precision="2" gui-text="Tolérance géométrique (px source)" gui-description="Écart maximal accepté pour ajuster les axes à des segments, cercles, arcs ou Bézier. Une petite valeur suit plus précisément le raster ; une valeur plus grande peut absorber ses irrégularités et simplifier les formes. Commencez à 1–2 px ; la rosace de référence utilise 5 px. Les pixels sont ceux du PNG original, quelle que soit sa taille dans Inkscape.">2</param>
+      <param name="min-component-size" type="int" min="0" max="100000000" gui-text="Supprimer les poussières / surface min en px" gui-description="Supprime avant la reconstruction les petits groupes isolés de pixels de trait dont la surface est inférieure à cette valeur. 0 conserve tous les groupes. Par exemple, 10 élimine ceux de moins de 10 pixels. Ce réglage peut aussi supprimer de petits détails voulus ; il ne supprime pas les petites branches rattachées à un grand motif.">0</param>
+      <separator/>
+      <label appearance="header">2. Nettoyage &amp; Continuité du squelette</label>
+      <param name="spur_tolerance" type="float" min="0.0" max="50.0" precision="2" gui-text="Élagage des micro-barbes (0 : désactivé) :" gui-description="Supprime les petites épines parasites issues du squelette sur les traits épais (en pixels).">0.00</param>
       <param name="gap-tolerance" type="float" min="0" max="10000" precision="2" gui-text="Raccordement des coupures (0 : désactivé)" gui-description="Distance maximale, en pixels du PNG, entre deux extrémités séparées à raccorder. Le moteur vérifie aussi leurs orientations et les obstacles. 0 désactive les raccordements. Augmentez seulement si le dessin contient de petites coupures ; une valeur trop grande risque de joindre des traits distincts.">0</param>
-      <param name="min-component-size" type="int" min="0" max="100000000" gui-text="Surface minimale des composantes (pixels)" gui-description="Supprime avant la reconstruction les petits groupes isolés de pixels de trait dont la surface est inférieure à cette valeur. 0 conserve tous les groupes. Par exemple, 10 élimine ceux de moins de 10 pixels. Ce réglage peut aussi supprimer de petits détails voulus ; il ne supprime pas les petites branches rattachées à un grand motif.">0</param>
-      <param name="stroke-width" type="float" min="0.01" max="10000" precision="2" gui-text="Épaisseur vectorielle (px source)" gui-description="Épaisseur d'affichage des vecteurs produits, en pixels du PNG source. Elle ne modifie ni les axes calculés ni la tolérance. Comme l'image, elle suit le redimensionnement dans Inkscape. 1 px convient pour inspecter les courbes ; vous pourrez changer le contour ensuite.">1</param>
+      <separator/>
+      <label appearance="header">3. Reconnaissance des formes &amp; Rendu SVG</label>
+      <param name="geometry-tolerance" type="float" min="0" max="10000" precision="2" gui-text="Tolérance géométrique (px source)" gui-description="Écart maximal accepté pour ajuster les axes à des segments, cercles, arcs ou Bézier. Une petite valeur suit plus précisément le raster ; une valeur plus grande peut absorber ses irrégularités et simplifier les formes. Commencez à 1–2 px ; la rosace de référence utilise 5 px. Les pixels sont ceux du PNG original, quelle que soit sa taille dans Inkscape.">2</param>
       <param name="global-arcs" type="bool" gui-text="Regrouper les cercles et grands arcs continus" gui-description="Recherche une même forme circulaire à travers plusieurs branches et intersections : cercle complet ou grand arc continu. Activez cette option pour privilégier les longues formes géométriques. Elle respecte la tolérance choisie et ne regroupe pas les courbes Bézier libres entre branches. Même décochée, l'extension peut produire des Bézier, cercles et arcs locaux.">false</param>
-      <label>Rosace : seuil manuel 160, tolérance 5, regroupement activé.</label>
+      <param name="stroke-width" type="float" min="0.01" max="10000" precision="2" gui-text="Épaisseur vectorielle (px source)" gui-description="Épaisseur d'affichage des vecteurs produits, en pixels du PNG source. Elle ne modifie ni les axes calculés ni la tolérance. Comme l'image, elle suit le redimensionnement dans Inkscape. 1 px convient pour inspecter les courbes ; vous pourrez changer le contour ensuite.">1</param>
     </page>
     <page name="help" gui-text="Aide">
-      <label appearance="header">Séparer le trait du fond</label>
-      <label xml:space="preserve">Seuil automatique : calcule la séparation selon l'image ; le seuil manuel est ignoré.
-Seuil manuel : de 0 (noir) à 255 (blanc). Sur fond blanc, monter le seuil
-inclut plus de gris ; le baisser peut faire disparaître des traits pâles.
-La transparence du PNG est composée sur blanc.</label>
-      <label appearance="header">Reconstruire et raccorder</label>
-      <label xml:space="preserve">Tolérance géométrique : précision de l'ajustement des axes en pixels sources.
-1–2 px : point de départ précis. 3–5 px : peut absorber plus d'irrégularités.
-Elle n'impose pas une courbe à chaque portion ; les angles sont conservés.
-Raccordement : distance maximale entre extrémités compatibles ; 0 le désactive.
-Regroupement : reconstitue cercles et grands arcs à travers les intersections.
-Les Bézier libres restent ajustés branche par branche.</label>
-      <label appearance="header">Nettoyer et afficher</label>
-      <label xml:space="preserve">Surface minimale : retire les groupes isolés plus petits que cette surface.
-0 conserve tout ; une valeur élevée peut supprimer des détails utiles.
-Épaisseur vectorielle : change l'affichage du trait, pas la géométrie calculée.
-Les distances sont en pixels du PNG natif, jamais en pixels écran ou en mm.</label>
-      <label appearance="header">Deux réglages de référence</label>
-      <label xml:space="preserve">Motif complexe : seuil manuel 160, tolérance 1 ou 2, raccordement 0.
-Rosace : seuil manuel 160, tolérance 5, regroupement activé.
+      <label appearance="header">Guide par type de motif (Préréglages)</label>
+      <label xml:space="preserve">• Dessin technique / Droites &amp; Polygones :
+  Pour plans, schémas et formes géométriques angulaires.
+  Valeurs : seuil auto, tolérance 2.5 px, barbes 3.0 px, poussières 5 px.
+• Rosace / Courbes géométriques entrelacées :
+  Pour rosaces, guillochis et entrelacs de cercles/arcs.
+  Valeurs : seuil 160, tolérance 5.0 px, barbes 3.0 px, regroupement global activé.
+• Tracé libre / Courbes organiques (Bézier) :
+  Pour calligraphie, lettrages et courbes fluides.
+  Valeurs : seuil auto, tolérance 2.0 px, barbes 2.5 px, poussières 5 px.
+• Motif fin &amp; très détaillé :
+  Pour gravures, micro-textures et tracés de haute précision.
+  Valeurs : seuil 165, tolérance 1.0 px, barbes 1.0 px, poussières 2 px.
+• Croquis scanné / Trait bruité ou coupé :
+  Pour dessins papier, traits crayonnés avec discontinuités.
+  Valeurs : seuil 175, tolérance 3.0 px, barbes 4.5 px, coupures 5.0 px, poussières 25 px.</label>
+      <label appearance="header">Mémo de dépannage rapide</label>
+      <label xml:space="preserve">• Traits clairs manquants :
+  Décocher Seuil auto et monter le seuil manuel (170–200).
+• Droites ou arcs morcelés :
+  Monter la tolérance géométrique (3–5 px) et l'élagage des barbes (3–4 px).
+• Angles vifs arrondis ou petits détails perdus :
+  Baisser la tolérance géométrique (1.0–1.5 px) et décocher le regroupement global.
+• Petites épines parasites sur traits épais :
+  Régler l'élagage des micro-barbes à la moitié de l'épaisseur du trait (ex: 3 à 5 px).</label>
+      <label appearance="header">Conseils généraux</label>
+      <label xml:space="preserve">L'épaisseur vectorielle (px) règle uniquement l'affichage dans Inkscape.
 Chaque application ajoute un groupe : masquez l'ancien pour comparer.
 Sélectionnez toujours le PNG original, pas les vecteurs d'un résultat précédent.</label>
     </page>
