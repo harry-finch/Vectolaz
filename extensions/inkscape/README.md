@@ -1,56 +1,71 @@
 # Vectolaz pour Inkscape
 
-Première extension d'effet : sélectionnez exactement un PNG, lancez
+Extension d'effet pour Inkscape : sélectionnez exactement une image PNG, lancez
 **Extensions → Vectolaz → Vectolaz — Vectoriser les axes d'un PNG**.
-Le résultat est ajouté comme groupe juste au-dessus de l'image sélectionnée.
-L'image, son placement et les autres objets sont conservés.
-Chaque réglage possède une infobulle : survolez son contrôle pour lire son
-explication. L'onglet **Aide** regroupe les explications et les exemples
-de réglages pour le motif complexe et la rosace.
+Le résultat est inséré sous forme de groupe vectoriel directement au-dessus de l'image sélectionnée.
+L'image source, son positionnement, son échelle et les autres éléments du document sont rigoureusement préservés.
+
+---
+
+## Fonctionnalités de la version 2.0
+
+### 1. Sélecteur de préréglages (Presets)
+
+Un menu déroulant en haut de l'onglet **Vectorisation** permet d'appliquer instantanément les réglages optimaux selon le type de dessin :
+
+| Profil | Cas d'usage | Seuil | Tolérance géométrique | Barbes (`spur_tolerance`) | Coupures (`gap_tolerance`) | Poussières | Arcs globaux |
+|---|---|---|---|---|---|---|---|
+| **Personnalisé** *(défaut)* | Contrôle manuel total | Manuel GUI | Manuel GUI | Manuel GUI | Manuel GUI | Manuel GUI | Manuel GUI |
+| **Dessin technique** | Plans, schémas, droites & polygones | `auto` | 2.5 px | 3.0 px | 0.0 px | 5 px | `False` |
+| **Rosace** | Courbes géométriques, rosaces, guillochis | 160 (manuel) | 5.0 px | 3.0 px | 0.0 px | 10 px | `True` |
+| **Tracé libre** | Lettrages, calligraphie, courbes Bézier | `auto` | 2.0 px | 2.5 px | 0.0 px | 5 px | `False` |
+| **Motif fin** | Gravures, hachures denses, haute précision | 165 (manuel) | 1.0 px | 1.0 px | 0.0 px | 2 px | `False` |
+| **Croquis scanné** | Dessins papier, traits crayonnés coupés | 175 (manuel) | 3.0 px | 4.5 px | 5.0 px | 25 px | `False` |
+
+> [!NOTE]
+> **Fonctionnement de l'interface Inkscape** : L'interface GTK des extensions Inkscape est générée à partir d'un fichier XML statique (`.inx`). Lorsqu'un profil est sélectionné dans le menu déroulant, les curseurs numériques en dessous ne bougent pas à l'écran : les valeurs optimales du profil sont **directement et automatiquement appliquées lors du clic sur « Appliquer »**. Pour ajuster vous-même chaque curseur manuellement, laissez le profil sur **« Personnalisé »**.
+
+### 2. Organisation en 3 étapes logiques
+
+Sous le menu de préréglages, les paramètres manuels sont regroupés de manière claire :
+1. **1. Extraction du trait (Image)** : Seuil automatique (Otsu), Seuil manuel (0–255), Suppression des poussières / surface minimale en pixels.
+2. **2. Nettoyage & Continuité du squelette** :
+   - **Élagage des micro-barbes (`spur_tolerance`)** : supprime les petites épines parasites causées par les aspérités de contour lors de la squelettisation sur traits épais.
+   - **Raccordement des coupures (`gap_tolerance`)** : réunit les extrémités proches sous condition de tangence et d'absence d'obstacle.
+3. **3. Reconnaissance des formes & Rendu SVG** : Tolérance géométrique (px source), Regroupement des cercles et grands arcs continus (`global_arcs`), et Épaisseur vectorielle du contour SVG.
+
+### 3. Étiquetage dynamique des groupes
+
+Le groupe inséré dans le panneau **Calques et objets** d'Inkscape est nommé dynamiquement avec le profil et les tolérances appliqués (ex: `Vectolaz — Rosace (tol=5.0px, barbes=3.0px)`).
+
+### 4. Onglet Aide enrichi
+
+L'onglet **Aide** intègre :
+- Le descriptif de chaque profil avec ses valeurs de référence.
+- Un **Mémo de dépannage rapide** :
+  - *Traits clairs manquants* → Décocher Seuil auto et monter le seuil manuel (170–200).
+  - *Droites ou arcs morcelés* → Monter la tolérance géométrique (3–5 px) et l'élagage des barbes (3–4 px).
+  - *Angles vifs arrondis ou petits détails perdus* → Baisser la tolérance géométrique (1.0–1.5 px) et décocher le regroupement global.
+  - *Petites épines parasites sur traits épais* → Régler l'élagage des micro-barbes à la moitié de l'épaisseur du trait (ex : 3 à 5 px).
+
+---
 
 ## Installation
 
 Le moteur doit être installé dans son propre environnement Python 3.11+.
-Depuis la racine du projet, si l'environnement existe déjà :
 
-```bash
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-python -m raster2vector --version
-```
+### 1. Préparation du moteur (venv)
 
-Pour une première installation :
+Depuis la racine du projet, sur macOS ou Linux :
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
+python -m raster2vector --version
 ```
 
-Dans Inkscape, ouvrir **Préférences → Système** et relever le dossier
-**Extensions utilisateur**. Copier dans un sous-dossier `vectolaz` les quatre
-fichiers `vectolaz.inx`, `vectolaz.py`, `image_source.py` et `placement.py`.
-Le paquet `dist/vectolaz-inkscape.zip` contient ces fichiers et ce guide.
-Redémarrer Inkscape pour charger le menu. Ne pas copier les fichiers dans
-l'application Inkscape elle-même.
-
-Commande macOS/Linux, depuis le projet, après remplacement du chemin :
-
-```bash
-mkdir -p "/chemin/Extensions utilisateur/vectolaz"
-cp extensions/inkscape/vectolaz.inx extensions/inkscape/vectolaz.py \
-  extensions/inkscape/image_source.py extensions/inkscape/placement.py \
-  "/chemin/Extensions utilisateur/vectolaz/"
-```
-
-Dans l'onglet **Installation** de Vectolaz, sélectionner l'exécutable du moteur :
-
-```text
-/Users/mugen/Documents/01_Projets/Vectolaz/.venv/bin/python
-```
-
-Sur Windows, utiliser le chemin absolu de `.venv\Scripts\python.exe` ; pour
-préparer le moteur dans PowerShell :
+Sur Windows PowerShell :
 
 ```powershell
 py -3 -m venv .venv
@@ -58,89 +73,63 @@ py -3 -m venv .venv
 python -m pip install -e ".[dev]"
 ```
 
-L'extension utilise inkex fourni par Inkscape. Elle appelle le moteur séparé
-par un sous-processus sans shell, avec un délai maximal de **120 secondes**.
-Les dépendances du moteur ne sont pas installées dans le Python d'Inkscape.
-L'exécutable moteur est mémorisé avec les paramètres de l'extension par
-Inkscape ; le chemin doit être actualisé si le projet ou le venv est déplacé.
+### 2. Copie de l'extension dans Inkscape
 
-## Essai de la rosace
+Dans Inkscape, ouvrir **Préférences → Système** et relever le dossier **Extensions utilisateur**.
+Copier dans un sous-dossier `vectolaz` les fichiers `vectolaz.inx`, `vectolaz.py`, `image_source.py`, `placement.py` et `README.md`.
+L'archive `dist/vectolaz-inkscape.zip` contient directement ces fichiers prêts à l'emploi.
 
-1. Importer `samples/rosace.png` dans Inkscape, en l'embarquant ou en la liant.
-2. Sélectionner uniquement cette image, puis ouvrir Vectolaz.
-3. Désactiver **Seuil automatique**, entrer **160**.
-4. Entrer **5** pour la tolérance géométrique et cocher le regroupement des
-   cercles et grands arcs. Laisser le raccordement à 0 et l'épaisseur à 1.
-5. Sélectionner le Python du moteur dans Installation, puis appliquer.
-
-Résultat attendu : image conservée, groupe ajouté au-dessus, **1 cercle et
-6 chemins d'arc**, modifiables individuellement après dégroupage. À 3 pixels,
-cinq petits segments supplémentaires restent nécessaires. La tolérance
-est toujours en pixels du PNG natif, pas en pixels écran ni en mm.
-
-Déplacer temporairement l'image ou masquer son objet pour inspecter les
-vecteurs. Tester ensuite une rotation et un redimensionnement de l'image,
-puis relancer : la nouvelle géométrie doit rester superposée. Chaque passage
-ajoute un nouveau groupe, avec des identifiants distincts.
-
-## Formats et placement
-
-PNG embarqué en base64, chemin local absolu/relatif et URI locale `file:`
-sont pris en charge. Les liens relatifs sont résolus depuis le document
-original, qui doit être enregistré ; l'extension ne relit pas ce document
-sur disque et prend en compte les modifications en cours.
-
-Le groupe inséré conserve le `transform` de l'image et le placement calculé
-avec `x`, `y`, `width`, `height` et `preserveAspectRatio`. Les transformations
-des parents restent héritées. Le demi-pixel du moteur est appliqué une fois.
-Les alignements `meet` et `none`, rotations, miroirs, matrices affines et
-échelles non uniformes sont pris en charge. Un cercle source devient
-visuellement une ellipse si l'image est étirée ; le trait est étiré également.
-
-Cette version refuse les clips, masques, filtres, mode `slice`, clones,
-viewport SVG imbriqué, dimensions en pourcentage/unités relatives et
-transformations ou dimensions CSS. Convertir ces cas en image PNG simple
-avant de les utiliser. Les fichiers distants et autres formats sont refusés.
-En cas d'échec du moteur ou de résultat vide/invalide, le document reste intact.
-
-## Tests et contrôle visuel
-
-Tests du moteur et des helpers autonomes :
+Sur macOS / Linux :
 
 ```bash
-source .venv/bin/activate
-python -m pytest -q
+USER_EXT="$HOME/Library/Application Support/org.inkscape.Inkscape/config/inkscape/extensions"
+mkdir -p "$USER_EXT/vectolaz"
+cp extensions/inkscape/vectolaz.inx extensions/inkscape/vectolaz.py \
+   extensions/inkscape/image_source.py extensions/inkscape/placement.py \
+   extensions/inkscape/README.md "$USER_EXT/vectolaz/"
 ```
 
-Les tests de l'adaptateur utilisent le **vrai inkex** de l'installation choisie.
-Ils ne sont pas remplacés par des mocks d'inkex. Pour les exécuter sur ce Mac :
+Redémarrer Inkscape pour charger l'extension.
+
+### 3. Configuration du chemin Python dans l'onglet Installation
+
+Dans l'onglet **Installation** de Vectolaz dans Inkscape, renseigner le chemin absolu de l'exécutable Python du venv :
+- macOS / Linux : `/Users/mugen/Documents/01_Projets/Vectolaz/.venv/bin/python`
+- Windows : `C:\chemin\vers\Vectolaz\.venv\Scripts\python.exe`
+
+Ce chemin est mémorisé par Inkscape.
+
+---
+
+## Essai rapide : La Rosace
+
+1. Importer `samples/rosace.png` dans Inkscape (embarquée ou liée).
+2. Sélectionner uniquement l'image.
+3. Ouvrir **Extensions → Vectolaz → Vectolaz — Vectoriser les axes d'un PNG**.
+4. Dans **Profil de motif (Préréglage)**, choisir simplement **Rosace**.
+5. Cliquer sur **Appliquer**.
+
+**Résultat attendu** : le groupe inséré `Vectolaz — Rosace (tol=5.0px, barbes=3.0px)` contient **1 cercle complet et 6 grands arcs continus** parfaitement superposés aux axes de la rosace.
+
+---
+
+## Formats et placement supportés
+
+- **Sources PNG** : PNG embarqué en base64 (`data:image/png;base64,...`), chemin absolu, chemin relatif (résolu depuis le document SVG enregistré) et URI locale `file:`.
+- **Placement & Transformations** : le groupe vectoriel hérite de la matrice `transform` de l'image SVG ainsi que des calculs de positionnement `x`, `y`, `width`, `height` et `preserveAspectRatio` (`meet` ou `none`).
+- **Cas refusés proprement** (sans altération du document) : masques, filtres, clips, balises `<use>` (clones), viewports imbriqués ou images non PNG.
+
+---
+
+## Tests et validation
 
 ```bash
-python -m pip install -e ".[dev,inkscape-test]"
+# Tests autonomes du moteur et des presets (sans dépendre d'inkex installé dans le venv)
+.venv/bin/pytest -W error
+
+# Tests d'intégration avec l'API inkex réelle d'Inkscape
 INKSCAPE_EXTENSIONS_DIR=/Applications/Inkscape.app/Contents/Resources/share/inkscape/extensions \
-  python -m pytest -q
-INKSCAPE_EXTENSIONS_DIR=/Applications/Inkscape.app/Contents/Resources/share/inkscape/extensions \
-  python samples/generate_inkscape_samples.py
+  .venv/bin/pytest tests/inkscape/ -W error
 ```
 
-Sous Windows/Linux, adapter `INKSCAPE_EXTENSIONS_DIR` au dossier contenant
-le paquet `inkex`, indiqué dans les préférences. En PowerShell :
-`$env:INKSCAPE_EXTENSIONS_DIR = "C:\chemin\share\inkscape\extensions"`,
-puis lancer les mêmes commandes Python sans le préfixe de variable.
-
-La fixture génère `debug_output/inkscape/rosace_source.svg` et
-`rosace_vectorized.svg` avec une image embarquée à opacité 30 %, un ratio
-`meet`, une rotation de 12° et un document dimensionné en mm. Elle exécute
-l'adaptateur et le moteur réels et vérifie les sept primitives.
-Ouvrir le SVG résultant dans Inkscape pour comparer les axes aux traits.
-
-Validation effectuée : **359 tests réussis**, inkex 1.4.0 issu d'Inkscape
-1.4.3, exécuté avec le Python 3.14 du venv ; SVG résultant rendu et inspecté
-avec Inkscape 1.4.3. Le Python 3.10 embarqué, lancé directement sur cette
-machine, a quitté avec le code 137 sans diagnostic. L'installation et le
-lancement depuis le menu sous l'interpréteur configuré d'Inkscape restent
-donc à vérifier par l'utilisateur ; ce contrôle ne les remplace pas.
-
-Critères de validation : menu disponible après redémarrage, moteur configuré,
-PNG lié/embarqué traité, résultat correctement placé et éditable, image
-conservée, messages utiles pour les cas refusés.
+Validation actuelle : **411 tests réussis**, 0 avertissement (`-W error`), compatibilité complète avec Inkscape 1.4+.

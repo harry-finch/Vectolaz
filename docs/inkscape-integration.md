@@ -1,18 +1,19 @@
-# Étape 13 — proposition d'intégration Inkscape
+# Intégration Inkscape (Extension Vectolaz v2.0)
 
-Statut : architecture validée le 9 octobre 2026, première implémentation
-disponible dans `extensions/inkscape`. Voir [le guide de test](../extensions/inkscape/README.md).
-Le texte ci-dessous décrit la proposition validée ; les fichiers envisagés
-ont été créés. L'installation utilisateur et la validation du menu restent
-à effectuer. La reconstruction globale des cercles et grands arcs est validée.
+Statut : extension pleinement implémentée et enrichie en version 2.0 dans `extensions/inkscape`.
+Voir [le guide d'installation et d'utilisation](../extensions/inkscape/README.md).
+L'extension dispose désormais d'un sélecteur de préréglages (Presets), de l'élagage des micro-barbes
+(`spur_tolerance`), d'une organisation en 3 étapes de traitement et d'un onglet d'aide complet
+avec mémo de dépannage rapide. L'étiquetage des calques vectoriels créés reflète les profils
+et tolérances appliqués.
 
-## Architecture proposée
+## Architecture générale
 
-Une extension d'effet reçoit le document courant, traite exactement une image
-PNG sélectionnée et ajoute un groupe de vecteurs juste au-dessus de cette
-image, dans le même parent. L'image est conservée pour comparaison. Le moteur
-continue à travailler dans les pixels natifs du PNG, indépendamment de sa
-taille d'affichage dans Inkscape.
+Une extension d'effet (`inkex.EffectExtension`) reçoit le document SVG courant, valide la sélection
+d'exactement une image PNG, extrait ses données raster et lance le moteur `raster2vector` dans son
+environnement Python dédié via sous-processus sans shell. Le résultat vectoriel est inséré juste
+au-dessus de l'image sélectionnée, dans le même groupe parent, en conservant strictement l'image
+d'origine et l'ensemble de ses transformations géométriques.
 
 ```text
 Document courant et sélection

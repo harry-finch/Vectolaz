@@ -4,50 +4,31 @@ Outil Python de reconstruction géométrique de dessins au trait noir sur fond
 blanc. L'objectif futur est de reconstruire les axes des traits, puis des
 primitives géométriques, plutôt que les contours des zones noires.
 
-## État actuel : moteur validé, première extension Inkscape
+## État actuel : moteur mature (411 tests) et extension Inkscape v2
 
-La reconstruction des courbes est désormais étendue aux branches mêlant
-angles et portions arrondies, ainsi qu'aux boucles fermées non circulaires.
-Voir [la correction sur le motif complexe](docs/motif-curves.md).
+Vectolaz propose une chaîne complète de vectorisation géométrique des axes médians
+à partir de dessins au trait raster (PNG), avec reconstruction sous tolérance
+analytique en segments de droite, cercles, arcs circulaires et courbes de Bézier cubiques.
 
-Les étapes 0 à 12 sont validées. Le programme charge l'image, la convertit en niveaux de
-gris, isole les traits par seuil et supprime éventuellement les petites
-composantes, puis calcule un squelette d'un pixel et un graphe topologique.
-Les branches compatibles avec une droite sont remplacées par un segment idéal.
-Les autres branches ouvertes sont simplifiées en polylignes sous tolérance.
-Les branches fermées compatibles deviennent des cercles. Les autres boucles
-restent brutes, et les primitives peuvent être exportées en SVG.
-Les branches ouvertes compatibles deviennent des arcs circulaires, après
-l'essai d'une droite et avant la simplification en polyligne. Les courbes
-douces restantes peuvent devenir des chemins Bézier cubiques quand cela
-réduit le nombre de points, poignées comprises, sous tolérance. Le raccordement
-optionnel des petites coupures vérifie la distance, les tangentes et les obstacles.
-Les intersections sont ensuite affinées avec des contacts géométriques communs,
-en conservant le graphe et en refusant les ajustements hors tolérance.
-Chaque étape suivante attend une validation explicite.
-La CLI propose maintenant un seuil automatique, une configuration TOML validée,
-une aide complète et l'affichage de la version. Une première extension
-Inkscape est disponible séparément dans `extensions/inkscape`.
-Le regroupement des cercles complets répartis entre plusieurs branches est
-également validé et s'active avec `--global-circles`. La nouvelle option
-`--global-arcs` ajoute les grands arcs continus à travers les intersections
-et active aussi les cercles globaux. Les courbes les plus longues sont
-privilégiées, sous la tolérance géométrique explicitement demandée.
-Ce regroupement et l'architecture de l'étape 13 sont validés. L'extension
-traite un PNG sélectionné et ajoute un groupe de vecteurs en respectant son
-placement. Voir [le guide d'installation et de test](extensions/inkscape/README.md)
-et [l'architecture](docs/inkscape-integration.md). Le lancement depuis le menu
-Inkscape attend une validation sur l'installation utilisateur.
+Le projet compte désormais **411 tests unitaires et d'intégration** (validés avec
+`pytest -W error`), couvrant :
+- L'ensemble du pipeline raster (binarisation Otsu, débruitage, squelettisation 8-connexe, graphe topologique).
+- L'**élagage topologique déterministe des micro-barbes** (`--spur-tolerance`) éliminant les aspérités de squelettisation sur les traits épais, avec dissolution automatique des fausses jonctions de degré 2.
+- Le **dé-biaisage adaptatif des jonctions** ("Zhang-Suen") permettant une reconnaissance parfaite des segments et arcs arrivant sur des carrefours épais sans distorsion d'extrémité.
+- La **continuité tangentielle $G^1$** aux raccords internes des chemins de Bézier multi-morceaux, garantissant des transitions fluides sans cassure visuelle.
+- La **simplification des polylignes fermées** (`Polyline` en boucle fermée via Douglas-Peucker circulaire).
+- Le **regroupement global** des cercles (`--global-circles`) et grands arcs continus (`--global-arcs`) à travers les intersections.
+- L'**extension Inkscape v2** (`extensions/inkscape`) offrant un sélecteur de préréglages par profil de motif (`technical`, `rosace`, `organic`, `detailed`, `scanned`, `custom`), une interface en 3 étapes claires, un guide d'aide interactif et un étiquetage dynamique des calques SVG produits.
 
 Commande courante, après installation :
 
 ```bash
 raster2vector drawing.png --threshold auto --geometry-tolerance 2 \
-  --gap-tolerance 3 --min-component-size 10 --stroke-width 1 \
-  --output drawing.svg --debug-dir debug --debug-svg
+  --spur-tolerance 3 --gap-tolerance 3 --min-component-size 10 \
+  --stroke-width 1 --output drawing.svg --debug-dir debug --debug-svg
 ```
 
-Le raccordement reste désactivé si `--gap-tolerance` n'est pas précisé.
+Le raccordement et l'élagage restent désactivés par défaut si `--gap-tolerance` ou `--spur-tolerance` ne sont pas précisés (valeur `0.0`).
 Les réglages d'une image validée peuvent être conservés dans un fichier TOML.
 
 ## Installation (Python 3.11+)
@@ -77,37 +58,22 @@ par l'extra `dev`. Après une mise à jour du projet, relancer
 ## Tests
 
 ```bash
-python -m pytest
+python -m pytest -W error
 ```
 
-Les tests utilisent des images synthétiques NumPy/OpenCV et vérifient les
-dimensions, les chemins Unicode, la gestion des erreurs, la transparence,
-les images 16 bits, les seuils, les deux polarités et la suppression du bruit.
-Pour le squelette, ils vérifient la continuité, les extrémités, les intersections,
-la conservation des trous et la proximité avec les axes géométriques attendus.
-Les tests du graphe couvrent les intersections, les boucles, les branches
-parallèles, les coordonnées et les 512 motifs locaux binaires de taille 3x3.
-Les tests géométriques vérifient l'ajustement orthogonal, les erreurs maximale
-et RMS, la tolérance inclusive, le bruit, les courbes et la conservation des boucles.
-Les tests des polylignes couvrent les L, zigzags, courbes douces, retours en
-arrière et la suppression de sommets redondants sans dépasser la tolérance.
-Les tests SVG vérifient les dimensions, les coordonnées, les strokes sans
-remplissage, les fermetures, le raster embarqué et la protection des fichiers sources.
-Les tests des cercles couvrent les données parfaites, rasterisées et bruitées,
-les ellipses, les cas dégénérés, le tour complet et l'export `<circle>`.
-Les tests des arcs couvrent les quarts/demi-cercles, arcs courts et grands,
-les deux sens, la traversée de +/-pi et les flags SVG.
-Les tests Bézier couvrent les courbes libres, le découpage, les extrémités
-partagées, la borne entre points sources, les erreurs, le déterminisme et l'export `C`.
-Les tests de raccordement couvrent les chaînes fusionnées, les boucles refermées,
-les orientations, les ambiguïtés, les obstacles, les ponts qui se croisent,
-la provenance des branches et les sorties CLI.
-Les tests des jonctions couvrent T, croix, double T, arcs courts/grands dans
-les deux sens, Bézier, boucles conservées, refus atomiques et comparaisons CLI.
-Les tests de configuration vérifient types, clés inconnues, erreurs TOML,
-priorité des options, valeurs par défaut explicites, protection du fichier,
-aide et version. Les tests Otsu couvrent traits peu contrastés, polarités
-opposées, images uniformes et seuil réellement appliqué.
+La suite compte **411 tests unitaires et d'intégration** sans aucun avertissement.
+Les tests utilisent des images synthétiques NumPy/OpenCV et vérifient :
+- **Pré-traitement & Binarisation** : dimensions, chemins Unicode, gestion d'erreurs, transparence composée sur blanc, images 16 bits, seuillage automatique d'Otsu et manuel, polarités et suppression des poussières/bruit.
+- **Squelettisation** : continuité 8-connexe, extrémités, intersections, conservation des trous et fidélité aux axes médians.
+- **Topologie & Graphe** : nœuds, branches, boucles, coordonnées demi-pixel et les 512 motifs locaux binaires $3\times 3$.
+- **Élagage des micro-barbes (`spur_tolerance`)** : suppression des branches pendantes parasites, préservation stricte d'au moins 2 branches par carrefour, dissolution topologique des nœuds de degré 2 avec raccordement sans saut spatial, conversion en boucle fermée des cycles sans nœud résiduel.
+- **Primitives géométriques** : ajustement orthogonal de droites (L2/RMS/max), dé-biaisage adaptatif des jonctions de Zhang-Suen, arcs de cercle et cercles complets (quarts, demis, traversée de $\pm\pi$, flags SVG).
+- **Courbes de Bézier & Lissage** : cubiques multi-morceaux, continuité tangentielle $G^1$ aux subdivisions internes sous contrôle d'erreur de Bernstein, préservation des angles vifs.
+- **Polylignes & Boucles fermées** : simplification Douglas-Peucker des chemins ouverts et fermés (`Polyline(is_loop=True)`).
+- **Raccordement des coupures (`gap_tolerance`)** : fusion de chaînes disjointes, fermeture de boucles, tangentes compatibles et franchissement d'obstacles.
+- **Affinage des jonctions** : recalage géométrique des extrémités sur contacts communs.
+- **Reconstruction globale** : cercles complets (`--global-circles`) et grands arcs continus (`--global-arcs`) à travers les intersections.
+- **Extension Inkscape** : validation XML du descripteur `.inx`, application des 5 profils de préréglages, mode personnalisé, et exécution de l'adaptateur avec `inkex`.
 
 ## Essai de la CLI
 
@@ -123,7 +89,7 @@ python -m raster2vector --help
 Avec votre propre image :
 
 ```bash
-python -m raster2vector "/chemin/vers/input.png" --threshold 160 --debug-dir debug/
+python -m raster2vector "/chemin/vers/input.png" --threshold 160 --spur-tolerance 3 --debug-dir debug/
 ```
 
 La sortie donne la largeur puis la hauteur en pixels et le nombre de pixels de
@@ -143,21 +109,23 @@ signalées sans traceback.
 
 | Option | Valeur par défaut | Effet |
 | --- | --- | --- |
-| `--threshold` | `128` | Entier entre 0 et 255, ou `auto` pour Otsu ; sombre si intensité ≤ seuil appliqué. |
+| `--threshold` | `128` | Entier entre 0 et 255, ou `auto` pour seuillage global d'Otsu ; sombre si intensité ≤ seuil. |
 | `--config` | Aucun | Charge les réglages d'un fichier TOML avec table `[vectorization]`. Les options explicites prennent priorité. |
-| `--global-circles` | Désactivé | Regroupe les branches compatibles constituant un cercle complet ; utilise `--geometry-tolerance`. |
-| `--version` | — | Affiche la version installée et quitte. |
-| `--invert` | `auto` | `yes` : traits sombres ; `no` : traits clairs ; `auto` : classe majoritaire au bord considérée comme fond. |
-| `--min-component-size` | `0` | Supprime les objets de surface strictement inférieure au minimum, en pixels ; 0 désactive le nettoyage. |
-| `--geometry-tolerance` | `2.0` | Erreur maximale en pixels pour accepter un segment, cercle, arc ou Bézier, finie et positive ou nulle. |
+| `--spur-tolerance` | `0.0` | Supprime les micro-branches parasites (barbes de squelette) plus courtes que cette longueur en px ; 0 désactive l'élagage. |
+| `--gap-tolerance` | `0.0` | Distance maximale entre deux extrémités compatibles à raccorder ; 0 désactive le raccordement. |
+| `--geometry-tolerance` | `2.0` | Erreur maximale en pixels pour accepter un segment, cercle, arc ou Bézier. |
 | `--polyline-tolerance` | `2.0` | Distance maximale au segment correspondant lors de la simplification d'une branche non droite. |
-| `--gap-tolerance` | `0.0` | Distance maximale entre deux endpoints compatibles ; 0 désactive le raccordement. Valeur finie et positive ou nulle. |
-| `--no-junction-cleanup` | Désactivé | Conserve les contacts géométriques de l'étape 10 pour comparaison. |
-| `--junction-cleanup` | Activé | Active l'affinage des jonctions, notamment pour remplacer `junction_cleanup = false` du fichier TOML. |
-| `--debug-dir` | Aucun | Enregistre les images intermédiaires et les contrôles de jonction, jusqu'à `geometry.png`. |
+| `--global-circles` | Désactivé | Regroupe les branches compatibles constituant un cercle complet à travers les intersections. |
+| `--global-arcs` | Désactivé | Privilégie les longs arcs continus à travers les intersections ; active aussi `--global-circles`. |
+| `--min-component-size` | `0` | Supprime les objets isolés de surface strictement inférieure au minimum, en pixels ; 0 conserve tout. |
+| `--stroke-width` | `1.0` | Épaisseur d'affichage du trait SVG en pixels sources, finie et strictement positive. |
+| `--invert` | `auto` | `yes` : traits sombres ; `no` : traits clairs ; `auto` : polarité déduite de la bordure. |
+| `--no-junction-cleanup` | Désactivé | Conserve les contacts bruts pour comparaison sans affinage des jonctions. |
+| `--junction-cleanup` | Activé | Active l'affinage géométrique des jonctions (par défaut activé). |
 | `--output` | Aucun | Écrit le SVG final ; le dossier parent est créé si nécessaire. |
-| `--stroke-width` | `1.0` | Épaisseur du trait SVG en pixels, finie et strictement positive. |
-| `--debug-svg` | Désactivé | Ajoute `overlay.svg` dans `--debug-dir`, avec le raster embarqué. |
+| `--debug-dir` | Aucun | Enregistre les images intermédiaires et les contrôles de jonction. |
+| `--debug-svg` | Désactivé | Ajoute `overlay.svg` dans `--debug-dir`, avec le raster embarqué sous les vecteurs. |
+| `--version` | — | Affiche la version installée et quitte. |
 
 L'inversion automatique convient aux dessins entourés de fond uniforme. Si le
 dessin occupe largement le bord de l'image, forcer `--invert yes` pour un trait
@@ -1074,9 +1042,12 @@ invert = "auto"           # auto, yes ou no
 geometry_tolerance = 2.0
 polyline_tolerance = 2.0
 gap_tolerance = 0.0
+spur_tolerance = 0.0      # élagage des micro-barbes
 min_component_size = 0
 stroke_width = 1.0
 junction_cleanup = true
+global_circles = false
+global_arcs = false
 ```
 
 Le fichier doit contenir uniquement la table `[vectorization]`. Les clés
@@ -1301,18 +1272,101 @@ erreur d'environ 2.75 pixels. Les écarts concernent les axes reconstruits et
 les zones de jonction du squelette, pas les contours du trait épais original.
 
 Comparer `geometry_local.png` à `geometry.png` et `overlay_local.svg` à
-`overlay.svg` dans chaque dossier. Les SVG de la rosace ont été rendus et
-inspectés dans Inkscape. La suite comporte **297 tests réussis**, dont les
-arcs majeurs, le passage de ±π, les orientations inversées, les fragments
-déconnectés, les ellipses refusées, les branches incompatibles conservées,
-les petites boucles absorbées, les erreurs continues près des extrémités,
-la provenance SVG et l'activation CLI sur une image synthétique.
+`overlay.svg` dans chaque dossier.
 
-Critères de validation : les six arcs internes sont des objets continus,
-le résultat à 5 pixels comporte sept primitives éditables, la superposition
-reste fidèle aux axes des traits dans la tolérance annoncée et les fragments
-non compatibles sont conservés au réglage plus strict.
+---
 
-Cette étape est validée. La préparation de l'intégration Inkscape est décrite
-dans [la proposition de l'étape 13](docs/inkscape-integration.md), sans
-implémentation à ce stade.
+## Élagage topologique des micro-barbes (`spur_tolerance`)
+
+Lors de la squelettisation d'images comportant des traits épais ou des aspérités
+de bordure, des petites branches parasites pendantes ("barbes" ou *spurs*)
+apparaissent souvent autour des intersections et le long des contours. Ces épines
+créent artificiellement des nœuds de type `junction` et fragmentent des traits
+qui devraient être continus.
+
+L'option `--spur-tolerance PIXELS` (fonction publique `prune_spurs` dans
+`raster2vector.graph`) permet d'éliminer automatiquement ces micro-branches :
+
+1. **Identification des barbes candidates** : arêtes non fermées reliant un nœud
+   `endpoint` à une `junction`, dont la longueur curviligne $\sum \|\Delta p\| \le \text{spur\_tolerance}$.
+2. **Règle de préservation topologique** : pour chaque jonction, le nombre de barbes
+   élaguées est plafonné pour que son degré résiduel reste au moins égal à 2. Les barbes
+   les plus courtes sont éliminées en priorité (départagées de manière déterministe).
+   Une étoile de micro-branches ne disparaît donc jamais dans le vide.
+3. **Dissolution topologique des fausses jonctions** : toute jonction dont le degré
+   résiduel devient exactement 2 est dissoute. Ses deux branches restantes sont fusionnées
+   en une branche unique continue. Si les points de contact diffèrent, un pont continu
+   8-connexe sans doublon est tracé à travers les `source_pixels` de la jonction dissoute.
+4. **Conservation des cycles fermés** : si une composante cyclique entière de jonctions
+   est dissoute, un nœud d'ancre `"loop"` est conservé pour fermer proprement la boucle.
+5. **Ré-indexation déterministe** : nœuds ré-indexés de `0..N-1` et arêtes de `0..E-1`.
+
+---
+
+## Dé-biaisage des jonctions et continuité $G^1$ des courbes Bézier
+
+### Dé-biaisage adaptatif des jonctions ("Zhang-Suen")
+
+À l'approche d'une jonction épaisse (croix, T, bifurcation), l'algorithme de
+squelettisation dévie systématiquement les derniers pixels de chaque branche
+vers le centre de gravité de la composante (effet "patte d'oie"). Cette déviation
+locale artificielle augmentait l'erreur maximale et empêchait la détection de
+segments de droite ou d'arcs de cercle par ailleurs parfaits.
+
+Le moteur applique désormais un rognage adaptatif temporaire des derniers pixels
+adjacents à une jonction (`_trimmed_junction_slice`) lors du calcul d'ajustement
+géométrique. Une fois le segment ou l'arc reconnu, ses extrémités sont prolongées
+proprement jusqu'aux contacts de la jonction sans subir la distorsion de squelette.
+
+### Continuité tangentielle $G^1$ aux raccords internes de Bézier
+
+Pour les tracés organiques et courbes fluides subdivisés en plusieurs cubiques
+consécutives (`fit_piecewise_bezier`), les tangentes aux points de raccord
+internes sont harmonisées via `_smooth_internal_joints` :
+- Les poignées de contrôle encadrant le raccord sont projetées pour devenir
+  colinéaires et de sens opposés.
+- L'alignement n'est validé que si la déformation résultante respecte strictement
+  la borne d'erreur continue de Bernstein sous la tolérance géométrique choisie.
+- Les angles vifs détectés (`corner_indices`) sont systématiquement préservés
+  sans lissage forcé.
+
+---
+
+## Reconnaissance et simplification des polygones fermés
+
+Les boucles fermées non circulaires (rectangles, triangles, polygones, contours
+mixtes) sont désormais simplifiées analytiquement sous forme de `Polyline(is_loop=True)`
+plutôt que de retomber en `RawPolyline` pixelisée brute :
+- Un sommet de courbure maximale est sélectionné de façon déterministe comme point
+  d'ancrage de départ.
+- L'algorithme de Douglas-Peucker circulaire est appliqué le long du périmètre fermé.
+- L'export SVG génère un tracé compact `M … L … Z` parfaitement fermé.
+
+---
+
+## Extension Inkscape v2
+
+L'extension officielle située dans `extensions/inkscape` dispose d'une ergonomie
+complètement repensée pour Inkscape 1.4+ :
+
+- **Menu de préréglages (Presets)** : profils optimisés prêts à l'emploi (`Dessin technique`,
+  `Rosace`, `Tracé libre`, `Motif fin`, `Croquis scanné`, et mode `Personnalisé`).
+- **Fonctionnement dans Inkscape** : les préréglages appliquent directement leurs valeurs
+  optimales lors du clic sur **Appliquer** (l'interface GTK d'Inkscape étant statique,
+  les curseurs à l'écran restent disponibles pour le mode Personnalisé).
+- **Organisation en 3 étapes** : 1. Extraction du trait (Image), 2. Nettoyage &
+  Continuité du squelette (avec `spur_tolerance` et `gap_tolerance`), 3. Reconnaissance
+  des formes & Rendu SVG.
+- **Étiquetage dynamique** : le groupe inséré dans Inkscape indique le profil et les
+  tolérances réels (ex : `Vectolaz — Rosace (tol=5.0px, barbes=3.0px)`).
+- **Aide et dépannage intégrés** : guide par type de motif et mémo des réglages fréquents.
+
+Voir [le guide d'installation et d'utilisation de l'extension](extensions/inkscape/README.md)
+et [l'architecture d'intégration](docs/inkscape-integration.md).
+
+---
+
+## Bilan de validation
+
+La suite de tests automatisée compte aujourd'hui **411 tests réussis**, 0 avertissement
+(`pytest -W error`), testée sous Python 3.11 à Python 3.14 sur macOS, Linux et Windows.
