@@ -122,7 +122,7 @@ def svg_document(
             closed = False
         elif isinstance(primitive, (Polyline, RawPolyline)):
             points = primitive.points
-            closed = (isinstance(primitive, RawPolyline) and primitive.is_loop
+            closed = (isinstance(primitive, (Polyline, RawPolyline)) and primitive.is_loop
                       and len(points) > 2 and points[0] == points[-1])
         else:
             raise TypeError(f"Primitive géométrique non supportée : {type(primitive)!r}")

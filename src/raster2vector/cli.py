@@ -91,6 +91,10 @@ Codes de sortie : 0 succès ; 1 erreur de fichier/traitement ; 2 arguments ou co
         help="Distance maximale entre extrémités compatibles (défaut : 0, désactivé).",
     )
     parser.add_argument(
+        "--spur-tolerance", type=float, default=None, metavar="PIXELS",
+        help="Supprime les micro-branches pendantes plus courtes que cette longueur (défaut : 0, désactivé).",
+    )
+    parser.add_argument(
         "--threshold", type=_threshold, default=None, metavar="auto|0..255",
         help="Seuil inclusif manuel, ou auto pour Otsu (défaut : 128).",
     )
@@ -119,6 +123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             polyline_tolerance=args.polyline_tolerance,
             gap_tolerance=args.gap_tolerance,
             stroke_width=args.stroke_width,
+            spur_tolerance=args.spur_tolerance,
             junction_cleanup=None if args.no_junction_cleanup is None else not args.no_junction_cleanup,
             global_circles=args.global_circles,
             global_arcs=args.global_arcs,

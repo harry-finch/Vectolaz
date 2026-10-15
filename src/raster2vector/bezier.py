@@ -100,6 +100,84 @@ def _candidate(coordinates: NDArray[np.float64], start: int, end: int) -> tuple[
     return curve, split
 
 
+def _evaluate_curve(curve: CubicBezier, coordinates: NDArray[np.float64]) -> CubicBezier:
+    """Ré-évalue les erreurs et la borne continue de Bernstein d'une cubique."""
+    data = coordinates[curve.source_start_index:curve.source_end_index + 1]
+    t = np.asarray(curve.source_parameters, dtype=np.float64)
+    u = t[:, None]
+    c = np.array([(p.x, p.y) for p in (curve.start, curve.control1, curve.control2, curve.end)], dtype=np.float64)
+    values = (1 - u)**3 * c[0] + 3 * (1 - u)**2 * u * c[1] + 3 * (1 - u) * u**2 * c[2] + u**3 * c[3]
+    derivative = 3 * (1 - u)**2 * (c[1] - c[0]) + 6 * (1 - u) * u * (c[2] - c[1]) + 3 * u**2 * (c[3] - c[2])
+    dt = np.diff(t)[:, None]
+    differences = np.stack((values[:-1] - data[:-1],
+                            values[:-1] + dt * derivative[:-1] / 3 - (2 * data[:-1] + data[1:]) / 3,
+                            values[1:] - dt * derivative[1:] / 3 - (data[:-1] + 2 * data[1:]) / 3,
+                            values[1:] - data[1:]), axis=1)
+    bounds = np.linalg.norm(differences, axis=2).max(axis=1)
+    errors = np.linalg.norm(values - data, axis=1)
+    return replace(curve, fit_error_max=float(errors.max()),
+                   fit_error_rms=float(np.sqrt(np.mean(errors**2))),
+                   error_bound=float(bounds.max()))
+
+
+def _try_smooth_joint(c_prev: CubicBezier, c_next: CubicBezier,
+                      coordinates: NDArray[np.float64],
+                      tolerance_px: float) -> tuple[CubicBezier, CubicBezier] | None:
+    """Tente un alignement G1 des poignées à une jonction sans dépasser la tolérance."""
+    t_in = np.array([c_prev.end.x - c_prev.control2.x, c_prev.end.y - c_prev.control2.y], dtype=np.float64)
+    L_in = float(np.linalg.norm(t_in))
+    t_out = np.array([c_next.control1.x - c_next.start.x, c_next.control1.y - c_next.start.y], dtype=np.float64)
+    L_out = float(np.linalg.norm(t_out))
+    if L_in <= 1e-9 or L_out <= 1e-9:
+        return None
+    u_in = t_in / L_in
+    u_out = t_out / L_out
+    dot_val = float(np.dot(u_in, u_out))
+    if dot_val <= 0.5:
+        return None
+    u_sum = u_in + u_out
+    norm_sum = float(np.linalg.norm(u_sum))
+    if norm_sum <= 1e-9:
+        return None
+    u_tangent = u_sum / norm_sum
+    joint_prev = np.array([c_prev.end.x, c_prev.end.y], dtype=np.float64)
+    joint_next = np.array([c_next.start.x, c_next.start.y], dtype=np.float64)
+    p2 = joint_prev - L_in * u_tangent
+    p1 = joint_next + L_out * u_tangent
+    new_prev = _evaluate_curve(replace(c_prev, control2=Point(float(p2[0]), float(p2[1]))), coordinates)
+    new_next = _evaluate_curve(replace(c_next, control1=Point(float(p1[0]), float(p1[1]))), coordinates)
+    if new_prev.error_bound <= tolerance_px and new_next.error_bound <= tolerance_px:
+        return new_prev, new_next
+    return None
+
+
+def _smooth_internal_joints(curves: list[CubicBezier], coordinates: NDArray[np.float64],
+                            tolerance_px: float,
+                            corner_indices: set[int] | frozenset[int] = frozenset(),
+                            is_loop: bool = False) -> list[CubicBezier]:
+    """Lisse les cassures de tangente aux raccords internes sous réserve de respecter la borne."""
+    if len(curves) < 2:
+        return curves
+    smoothed = list(curves)
+    for i in range(len(smoothed) - 1):
+        c_prev = smoothed[i]
+        c_next = smoothed[i + 1]
+        joint_idx = c_prev.source_end_index
+        if joint_idx in corner_indices:
+            continue
+        pair = _try_smooth_joint(c_prev, c_next, coordinates, tolerance_px)
+        if pair is not None:
+            smoothed[i], smoothed[i + 1] = pair
+    if is_loop and len(smoothed) >= 2:
+        if 0 not in corner_indices and (len(coordinates) - 1) not in corner_indices:
+            c_prev = smoothed[-1]
+            c_next = smoothed[0]
+            pair = _try_smooth_joint(c_prev, c_next, coordinates, tolerance_px)
+            if pair is not None:
+                smoothed[-1], smoothed[0] = pair
+    return smoothed
+
+
 def _path_rms(curves: Sequence[CubicBezier], coordinates: NDArray[np.float64]) -> float:
     """Calcule l'erreur quadratique moyenne exacte sur l'ensemble des points sources.
 
@@ -159,6 +237,7 @@ def fit_bezier(points: Sequence[Point], tolerance_px: float = 2.0, *, source_edg
             index = max(0, index-1)
         else:
             index += 1
+    curves = _smooth_internal_joints(curves, coordinates, tolerance_px)
     rms = _path_rms(curves, coordinates)
     return BezierPath(tuple(curves), source_edge_id, source, max(c.fit_error_max for c in curves),
                       rms, max(c.error_bound for c in curves))
@@ -209,6 +288,9 @@ def fit_piecewise_bezier(points: Sequence[Point], tolerance_px: float,
     if not curves:
         return None
     coordinates = np.array([(p.x, p.y) for p in source], dtype=np.float64).reshape(-1, 2)
+    curves = _smooth_internal_joints(curves, coordinates, tolerance_px,
+                                     corner_indices=set(break_indices),
+                                     is_loop=is_loop)
     rms = _path_rms(curves, coordinates)
     return BezierPath(tuple(curves), source_edge_id, source,
                       max(c.fit_error_max for c in curves), rms,

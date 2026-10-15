@@ -9,7 +9,7 @@ from raster2vector.gaps import GapResult, connect_gaps
 from raster2vector.geometry import GeometryResult, reconstruct_geometry
 from raster2vector.global_arcs import GlobalArcResult, reconstruct_global_arcs
 from raster2vector.global_circles import GlobalCircleResult, reconstruct_global_circles
-from raster2vector.graph import SkeletonGraph, skeleton_to_graph
+from raster2vector.graph import SkeletonGraph, skeleton_to_graph, prune_spurs
 from raster2vector.junctions import JunctionResult, refine_junctions
 from raster2vector.preprocessing import (
     automatic_threshold,
@@ -49,7 +49,7 @@ def run_pipeline(
     binary = binarize(grayscale, threshold, config.invert)
     cleaned = remove_small_objects(binary, config.min_component_size)
     skeleton = skeletonize_mask(cleaned)
-    graph = skeleton_to_graph(skeleton)
+    graph = prune_spurs(skeleton_to_graph(skeleton), config.spur_tolerance)
     gaps = connect_gaps(graph, config.gap_tolerance)
     geometry_before = reconstruct_geometry(
         gaps.graph, config.geometry_tolerance, config.polyline_tolerance

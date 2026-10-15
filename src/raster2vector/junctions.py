@@ -181,6 +181,8 @@ def _adjust(primitive: Primitive, start: Point, end: Point, tolerance: float) ->
         return replace(primitive, start=start, end=end, fit_error_max=float(errors.max()),
                        fit_error_rms=float(np.sqrt(np.mean(errors**2))))
     if isinstance(primitive, Polyline):
+        if primitive.is_loop and start != end:
+            return None
         points = (start, *primitive.points[1:-1], end)
         data = np.array([(p.x, p.y) for p in primitive.source_points])
         errors = np.zeros(len(data))

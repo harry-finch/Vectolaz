@@ -8,7 +8,7 @@ from raster2vector.preprocessing import automatic_threshold
 from raster2vector.bezier import CubicBezier, BezierPath, fit_bezier, evaluate_cubic
 from raster2vector.preprocessing import binarize, remove_small_objects, to_grayscale
 from raster2vector.skeleton import skeletonize_mask
-from raster2vector.graph import GraphNode, GraphEdge, SkeletonGraph, Point, skeleton_to_graph
+from raster2vector.graph import GraphNode, GraphEdge, SkeletonGraph, Point, skeleton_to_graph, prune_spurs
 from raster2vector.geometry import (
     LineFit, LineSegment, Polyline, RawPolyline, GeometryResult, fit_line,
     simplify_polyline, reconstruct_geometry,
@@ -29,7 +29,7 @@ __all__ = [
     "GapConnection", "GapResult", "connect_gaps",
     "CubicBezier", "BezierPath", "fit_bezier", "evaluate_cubic",
     "load_image", "to_grayscale", "binarize", "remove_small_objects", "skeletonize_mask",
-    "Point", "GraphNode", "GraphEdge", "SkeletonGraph", "skeleton_to_graph",
+    "Point", "GraphNode", "GraphEdge", "SkeletonGraph", "skeleton_to_graph", "prune_spurs",
     "LineFit", "LineSegment", "Polyline", "RawPolyline", "GeometryResult", "fit_line",
     "simplify_polyline", "reconstruct_geometry",
     "svg_document", "export_svg",

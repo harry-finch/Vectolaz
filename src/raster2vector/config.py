@@ -17,6 +17,7 @@ class VectorizationConfig:
     polyline_tolerance: float = 2.0
     gap_tolerance: float = 0.0
     stroke_width: float = 1.0
+    spur_tolerance: float = 0.0
     junction_cleanup: bool = True
     global_circles: bool = False
     global_arcs: bool = False
@@ -28,7 +29,7 @@ class VectorizationConfig:
             raise ValueError("--invert doit être auto, yes ou no.")
         if type(self.min_component_size) is not int or self.min_component_size < 0:
             raise ValueError("--min-component-size doit être un entier positif ou nul.")
-        for name in ("geometry_tolerance", "polyline_tolerance", "gap_tolerance", "stroke_width"):
+        for name in ("geometry_tolerance", "polyline_tolerance", "gap_tolerance", "stroke_width", "spur_tolerance"):
             value = getattr(self, name)
             try:
                 finite = type(value) in (int, float) and math.isfinite(value)
